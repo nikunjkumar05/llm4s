@@ -231,7 +231,7 @@ class OpenRouterClient(
           })
         }
         base
-      case ToolMessage(toolCallId, content) =>
+      case ToolMessage(content, toolCallId) =>
         ujson.Obj(
           "role"         -> "tool",
           "tool_call_id" -> toolCallId,

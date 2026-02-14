@@ -1,10 +1,13 @@
 package org.llm4s.llmconnect.provider
 
 import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 import org.llm4s.llmconnect.config.OpenAIConfig
+import org.llm4s.llmconnect.model.{ CompletionOptions, Conversation, ToolMessage }
 import org.llm4s.metrics.MockMetricsCollector
+import ujson._
 
-class OpenRouterClientSpec extends AnyFunSuite {
+class OpenRouterClientSpec extends AnyFunSuite with Matchers {
 
   private val testConfig = OpenAIConfig(
     apiKey = "test-key",
@@ -39,5 +42,21 @@ class OpenRouterClientSpec extends AnyFunSuite {
     val client = new OpenRouterClient(testConfig)
 
     assert(client.getReserveCompletion() == 4096)
+  }
+
+  test("openrouter client serializes tool message with correct fields") {
+    val client       = new OpenRouterClient(testConfig)
+    val conversation = Conversation(Seq(ToolMessage("tool-output", "call-42")))
+
+    val method = classOf[OpenRouterClient]
+      .getDeclaredMethod("createRequestBody", classOf[Conversation], classOf[CompletionOptions])
+    method.setAccessible(true)
+
+    val requestBody = method.invoke(client, conversation, CompletionOptions()).asInstanceOf[ujson.Obj]
+    val toolMsg     = requestBody("messages")(0)
+
+    toolMsg("role").str shouldBe "tool"
+    toolMsg("tool_call_id").str shouldBe "call-42"
+    toolMsg("content").str shouldBe "tool-output"
   }
 }

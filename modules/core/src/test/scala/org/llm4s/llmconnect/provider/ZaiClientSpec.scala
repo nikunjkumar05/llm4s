@@ -135,7 +135,7 @@ class ZaiClientSpec extends AnyFlatSpec with Matchers {
 
   it should "create valid request body for tool message" in {
     val helper       = new ZaiClientTestHelper(testConfig)
-    val conversation = Conversation(Seq(ToolMessage("call-123", "Result: 4")))
+    val conversation = Conversation(Seq(ToolMessage("Result: 4", "call-123")))
     val options      = CompletionOptions()
 
     val requestBody = helper.testCreateRequestBody(conversation, options)
@@ -595,7 +595,7 @@ class ZaiClientTestHelper(config: ZaiConfig) extends ZaiClient(config) {
           })
         }
         base
-      case ToolMessage(toolCallId, content) =>
+      case ToolMessage(content, toolCallId) =>
         ujson.Obj(
           "role"         -> "tool",
           "tool_call_id" -> toolCallId,
