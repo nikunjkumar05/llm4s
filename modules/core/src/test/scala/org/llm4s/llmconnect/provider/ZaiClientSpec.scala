@@ -145,6 +145,22 @@ class ZaiClientSpec extends AnyFlatSpec with Matchers {
     requestBody("messages")(0)("content")(0)("text").str shouldBe "Result: 4"
   }
 
+  it should "serialize tool message correctly via ZaiClient" in {
+    val client       = new ZaiClient(testConfig)
+    val conversation = Conversation(Seq(ToolMessage("Result: 4", "call-123")))
+
+    val method = classOf[ZaiClient]
+      .getDeclaredMethod("createRequestBody", classOf[Conversation], classOf[CompletionOptions])
+    method.setAccessible(true)
+
+    val requestBody = method.invoke(client, conversation, CompletionOptions()).asInstanceOf[ujson.Obj]
+    val toolMsg     = requestBody("messages")(0)
+
+    toolMsg("role").str shouldBe "tool"
+    toolMsg("tool_call_id").str shouldBe "call-123"
+    toolMsg("content")(0)("text").str shouldBe "Result: 4"
+  }
+
   it should "include temperature and top_p options" in {
     val helper       = new ZaiClientTestHelper(testConfig)
     val conversation = Conversation(Seq(UserMessage("Test")))
