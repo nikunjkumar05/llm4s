@@ -5,7 +5,6 @@ import org.scalatest.matchers.should.Matchers
 import org.llm4s.llmconnect.config.OpenAIConfig
 import org.llm4s.llmconnect.model.{ CompletionOptions, Conversation, ToolMessage }
 import org.llm4s.metrics.MockMetricsCollector
-import ujson._
 
 class OpenRouterClientSpec extends AnyFunSuite with Matchers {
 
