@@ -30,21 +30,94 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Prepare Claude prompt
+        id: prepare_prompt
+        shell: bash
+        env:
+          DEFAULT_REVIEW_DOC: docs/reference/review-guidelines.md
+        run: |
+          set -euo pipefail
+
+          trigger_text="$(jq -r '
+            [
+              .comment.body?,
+              .review.body?,
+              .issue.body?,
+              .issue.title?
+            ] as $candidates
+            | ($candidates | map(select(type == "string" and contains("@claude"))) | .[0])
+              // ($candidates | map(select(type == "string")) | .[0])
+              // ""
+          ' "$GITHUB_EVENT_PATH")"
+
+          review_doc=""
+          if [[ "$trigger_text" =~ --reviewdoc[[:space:]]+([^[:space:]]+) ]]; then
+            review_doc="${BASH_REMATCH[1]}"
+            review_doc="${review_doc%\"}"
+            review_doc="${review_doc#\"}"
+            review_doc="${review_doc%\'}"
+            review_doc="${review_doc#\'}"
+          else
+            review_doc="$DEFAULT_REVIEW_DOC"
+          fi
+
+          if [[ "$review_doc" = /* ]]; then
+            echo "Absolute paths are not allowed for --reviewdoc: $review_doc" >&2
+            exit 1
+          fi
+
+          if [[ "$review_doc" == *"/../"* ]] || [[ "$review_doc" == "../"* ]] || [[ "$review_doc" == *"/.." ]]; then
+            echo "Path traversal is not allowed for --reviewdoc: $review_doc" >&2
+            exit 1
+          fi
+
+          if [[ "$review_doc" == -* ]]; then
+            echo "Invalid --reviewdoc value: $review_doc" >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$review_doc" ]]; then
+            echo "Review guideline document not found: $review_doc" >&2
+            exit 1
+          fi
+
+          clean_request="$(printf '%s' "$trigger_text" | sed -E 's/[[:space:]]--reviewdoc[[:space:]]+(["\047][^"\047]+["\047]|[^[:space:]]+)//g')"
+          clean_request="$(printf '%s' "$clean_request" | sed -E 's/@claude//g')"
+          clean_request="$(printf '%s' "$clean_request" | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
+
+          {
+            echo "review_doc_path=$review_doc"
+            echo "clean_request<<EOF"
+            echo "$clean_request"
+            echo "EOF"
+            echo "prompt<<EOF"
+            printf '%s\n' \
+              "Use this review guideline document as a mandatory source of truth for this run:" \
+              "$review_doc" \
+              "" \
+              "Requirements:" \
+              "- Read and apply all relevant rules from the specified review document before producing output." \
+              "- If there is any conflict, prioritize explicit repository code and runtime behavior, then explain the conflict clearly." \
+              "- Keep feedback precise, actionable, and line-referenced when applicable." \
+              "" \
+              "User request:" \
+              "$clean_request"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          
+
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
+          prompt: ${{ steps.prepare_prompt.outputs.prompt }}
 
           # Optional: Add claude_args to customize behavior and configuration
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.anthropic.com/en/docs/claude-code/sdk#command-line for available options
           # claude_args: '--model claude-opus-4-1-20250805 --allowed-tools Bash(gh pr:*)'
-
