@@ -44,18 +44,19 @@ class OpenRouterClientSpec extends AnyFunSuite with Matchers {
   }
 
   test("openrouter client serializes tool message with correct fields") {
-    val client       = new OpenRouterClient(testConfig)
+    val client       = new OpenRouterClientTestHelper(testConfig)
     val conversation = Conversation(Seq(ToolMessage("tool-output", "call-42")))
 
-    val method = classOf[OpenRouterClient]
-      .getDeclaredMethod("createRequestBody", classOf[Conversation], classOf[CompletionOptions])
-    method.setAccessible(true)
-
-    val requestBody = method.invoke(client, conversation, CompletionOptions()).asInstanceOf[ujson.Obj]
+    val requestBody = client.exposedCreateRequestBody(conversation, CompletionOptions())
     val toolMsg     = requestBody("messages")(0)
 
     toolMsg("role").str shouldBe "tool"
     toolMsg("tool_call_id").str shouldBe "call-42"
     toolMsg("content").str shouldBe "tool-output"
   }
+}
+
+final private class OpenRouterClientTestHelper(cfg: OpenAIConfig) extends OpenRouterClient(cfg) {
+  def exposedCreateRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj =
+    createRequestBody(conversation, options)
 }

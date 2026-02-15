@@ -146,14 +146,10 @@ class ZaiClientSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "serialize tool message correctly via ZaiClient" in {
-    val client       = new ZaiClient(testConfig)
+    val client       = new ZaiClientTestHelper(testConfig)
     val conversation = Conversation(Seq(ToolMessage("Result: 4", "call-123")))
 
-    val method = classOf[ZaiClient]
-      .getDeclaredMethod("createRequestBody", classOf[Conversation], classOf[CompletionOptions])
-    method.setAccessible(true)
-
-    val requestBody = method.invoke(client, conversation, CompletionOptions()).asInstanceOf[ujson.Obj]
+    val requestBody = client.exposedCreateRequestBody(conversation, CompletionOptions())
     val toolMsg     = requestBody("messages")(0)
 
     toolMsg("role").str shouldBe "tool"
@@ -584,54 +580,11 @@ class ZaiClientSpec extends AnyFlatSpec with Matchers {
 class ZaiClientTestHelper(config: ZaiConfig) extends ZaiClient(config) {
   import scala.util.Try
 
-  def testCreateRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj = {
-    val messages = conversation.messages.map {
-      case UserMessage(content) =>
-        ujson.Obj("role" -> "user", "content" -> ujson.Arr(ujson.Obj("type" -> "text", "text" -> ujson.Str(content))))
-      case SystemMessage(content) =>
-        ujson.Obj(
-          "role"    -> "system",
-          "content" -> ujson.Arr(ujson.Obj("type" -> "text", "text" -> ujson.Str(content)))
-        )
-      case AssistantMessage(content, toolCalls) =>
-        val base = ujson.Obj("role" -> "assistant")
-        content.filter(_.nonEmpty).foreach { c =>
-          base("content") = ujson.Arr(ujson.Obj("type" -> "text", "text" -> ujson.Str(c)))
-        }
-        if (toolCalls.nonEmpty) {
-          base("tool_calls") = ujson.Arr.from(toolCalls.map { tc =>
-            ujson.Obj(
-              "id"   -> tc.id,
-              "type" -> "function",
-              "function" -> ujson.Obj(
-                "name"      -> tc.name,
-                "arguments" -> tc.arguments.render()
-              )
-            )
-          })
-        }
-        base
-      case ToolMessage(content, toolCallId) =>
-        ujson.Obj(
-          "role"         -> "tool",
-          "tool_call_id" -> toolCallId,
-          "content"      -> ujson.Arr(ujson.Obj("type" -> "text", "text" -> ujson.Str(content)))
-        )
-    }
+  def testCreateRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj =
+    createRequestBody(conversation, options)
 
-    val base = ujson.Obj(
-      "model"       -> config.model,
-      "messages"    -> ujson.Arr.from(messages),
-      "temperature" -> options.temperature,
-      "top_p"       -> options.topP
-    )
-
-    options.maxTokens.foreach(mt => base("max_tokens") = mt)
-    if (options.presencePenalty != 0) base("presence_penalty") = options.presencePenalty
-    if (options.frequencyPenalty != 0) base("frequency_penalty") = options.frequencyPenalty
-
-    base
-  }
+  def exposedCreateRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj =
+    createRequestBody(conversation, options)
 
   def testParseCompletion(json: ujson.Value): Completion = {
     val choice  = json("choices")(0)
