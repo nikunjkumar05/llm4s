@@ -134,7 +134,7 @@ class OllamaClient(
     extractCost = (c: Completion) => c.estimatedCost
   )
 
-  private def createRequestBody(
+  private[provider] def createRequestBody(
     conversation: Conversation,
     options: CompletionOptions,
     stream: Boolean

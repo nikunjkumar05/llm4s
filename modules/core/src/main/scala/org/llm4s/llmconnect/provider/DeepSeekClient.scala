@@ -215,10 +215,17 @@ class DeepSeekClient(
     }
   }
 
+  /**
+   * Parse argument JSON from a string, returning the raw string if parsing fails.
+   * This avoids null semantics in Scala code by using an Option-compatible pattern.
+   *
+   * @param raw Raw JSON string to parse
+   * @return Parsed JSON, or raw string if parsing fails
+   */
   private def parseStreamingArguments(raw: String): ujson.Value =
-    if (raw.isEmpty) ujson.Null else scala.util.Try(ujson.read(raw)).getOrElse(ujson.Str(raw))
+    if (raw.isEmpty) ujson.Obj() else scala.util.Try(ujson.read(raw)).getOrElse(ujson.Str(raw))
 
-  private def createRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj = {
+  private[provider] def createRequestBody(conversation: Conversation, options: CompletionOptions): ujson.Obj = {
     val messages = conversation.messages.map {
       case UserMessage(content) =>
         ujson.Obj("role" -> "user", "content" -> content)

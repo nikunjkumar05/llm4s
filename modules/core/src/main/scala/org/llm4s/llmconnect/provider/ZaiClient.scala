@@ -222,8 +222,15 @@ class ZaiClient(
     }
   }
 
-  private def parseStreamingArguments(raw: String): ujson.Value =
-    if (raw.isEmpty) ujson.Null else scala.util.Try(ujson.read(raw)).getOrElse(ujson.Str(raw))
+  /**
+   * Parse argument JSON from a string, returning the raw string if parsing fails.
+   * This avoids null semantics in Scala code by using an Option-compatible pattern.
+   *
+   * @param raw Raw JSON string to parse
+   * @return Parsed JSON, or raw string if parsing fails
+   */
+  private[provider] def parseStreamingArguments(raw: String): ujson.Value =
+    if (raw.isEmpty) ujson.Obj() else scala.util.Try(ujson.read(raw)).getOrElse(ujson.Str(raw))
 
   /**
    * Test-visible seam for request serialization; intentionally scoped to provider package to avoid broader API surface.
