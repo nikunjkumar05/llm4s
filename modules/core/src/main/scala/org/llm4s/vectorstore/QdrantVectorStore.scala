@@ -252,14 +252,8 @@ final class QdrantVectorStore private (
       .flatMap(identity)
 
   override def clear(): Result[Unit] =
-    Try {
-      // Delete and recreate collection
-      httpDelete(collectionsUrl)
-      // Collection will be recreated on next upsert
-      Right(())
-    }.toEither.left
-      .map(e => ProcessingError("qdrant-store", s"Failed to clear: ${e.getMessage}"))
-      .flatMap(identity)
+    // Delete collection - it will be recreated on next upsert
+    httpDelete(collectionsUrl)
 
   override def stats(): Result[VectorStoreStats] =
     Try {
