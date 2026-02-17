@@ -45,6 +45,8 @@ class StableDiffusionClientTest extends AnyFunSuite with Matchers with ScalaFutu
       lastHeaders = headers
       response
     }
+
+    override def postRaw(url: String, headers: Map[String, String], data: String, timeout: Int) = ???
   }
 
   // Helper to create a dummy response

@@ -1,6 +1,6 @@
 package org.llm4s.imagegeneration.provider
 
-import org.llm4s.http.{ HttpResponse, Llm4sHttpClient, MultipartPart }
+import org.llm4s.http.{ HttpRawResponse, HttpResponse, Llm4sHttpClient, MultipartPart }
 
 import scala.util.Try
 
@@ -14,6 +14,9 @@ trait HttpClient {
     timeout: Int
   ): Try[HttpResponse]
   def get(url: String, headers: Map[String, String], timeout: Int): Try[HttpResponse]
+
+  /** POST with a string body and return raw bytes, bypassing charset decoding. */
+  def postRaw(url: String, headers: Map[String, String], data: String, timeout: Int): Try[HttpRawResponse]
 }
 
 object HttpClient {
@@ -55,4 +58,10 @@ class SimpleHttpClient(llm4sClient: Llm4sHttpClient) extends HttpClient {
     logger.debug(s"GET $url")
     llm4sClient.get(url = url, headers = headers, timeout = timeout)
   }
+
+  override def postRaw(url: String, headers: Map[String, String], data: String, timeout: Int): Try[HttpRawResponse] =
+    Try {
+      logger.debug(s"POST (raw bytes) $url")
+      llm4sClient.postRaw(url = url, headers = headers, body = data, timeout = timeout)
+    }
 }

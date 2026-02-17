@@ -2,7 +2,7 @@ package org.llm4s.imagegeneration.clients
 
 import org.llm4s.imagegeneration._
 import org.llm4s.imagegeneration.provider._
-import org.llm4s.http.HttpResponse
+import org.llm4s.http.{ HttpRawResponse, HttpResponse }
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.EitherValues
 import org.scalatest.funsuite.AnyFunSuite
@@ -241,7 +241,8 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(createResponse(200, "imagebytes")))
+    val fakeBytes = Array[Byte](0xff.toByte, 0xd8.toByte, 0xff.toByte, 0xe0.toByte)
+    (mockHttpClient.postRaw _).when(*, *, *, *).returns(Success(HttpRawResponse(200, fakeBytes)))
 
     val result = client.generateImage(prompt)
     result.isRight shouldBe true
@@ -253,7 +254,8 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(createResponse(200, "imagebytes")))
+    val fakeBytes = Array[Byte](0xff.toByte, 0xd8.toByte, 0xff.toByte, 0xe0.toByte)
+    (mockHttpClient.postRaw _).when(*, *, *, *).returns(Success(HttpRawResponse(200, fakeBytes)))
 
     val result = client.generateImages(prompt, 2)
     result.isRight shouldBe true
@@ -265,7 +267,9 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(mockErrorResponse))
+    (mockHttpClient.postRaw _)
+      .when(*, *, *, *)
+      .returns(Success(HttpRawResponse(400, "Invalid request".getBytes)))
 
     val result = client.generateImage(prompt)
     result.isLeft shouldBe true
@@ -276,7 +280,9 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(createResponse(401, "Unauthorized")))
+    (mockHttpClient.postRaw _)
+      .when(*, *, *, *)
+      .returns(Success(HttpRawResponse(401, "Unauthorized".getBytes)))
 
     val result = client.generateImage(prompt)
     result.isLeft shouldBe true
@@ -288,7 +294,9 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(createResponse(429, "Rate limit")))
+    (mockHttpClient.postRaw _)
+      .when(*, *, *, *)
+      .returns(Success(HttpRawResponse(429, "Rate limit".getBytes)))
 
     val result = client.generateImage(prompt)
     result.isLeft shouldBe true
@@ -312,7 +320,8 @@ class ImageGenerationClientsTest
     val config         = HuggingFaceConfig(apiKey = "test-key")
     val client         = new HuggingFaceClient(config, mockHttpClient)
 
-    (mockHttpClient.post _).when(*, *, *, *).returns(Success(createResponse(200, "imagebytes")))
+    val fakeBytes = Array[Byte](0xff.toByte, 0xd8.toByte, 0xff.toByte, 0xe0.toByte)
+    (mockHttpClient.postRaw _).when(*, *, *, *).returns(Success(HttpRawResponse(200, fakeBytes)))
 
     whenReady(client.generateImageAsync(prompt)) { result =>
       result.isRight shouldBe true

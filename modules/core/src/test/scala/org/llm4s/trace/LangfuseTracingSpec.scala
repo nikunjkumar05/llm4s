@@ -53,6 +53,7 @@ class LangfuseTracingSpec extends AnyFlatSpec with Matchers {
 
     override def delete(url: String, headers: Map[String, String], timeout: Int): HttpResponse =
       response
+    override def postRaw(url: String, headers: Map[String, String], body: String, timeout: Int) = ???
   }
 
   class FailingHttpClient(exception: Throwable) extends Llm4sHttpClient {
@@ -83,6 +84,7 @@ class LangfuseTracingSpec extends AnyFlatSpec with Matchers {
 
     override def delete(url: String, headers: Map[String, String], timeout: Int): HttpResponse =
       fail
+    override def postRaw(url: String, headers: Map[String, String], body: String, timeout: Int) = ???
   }
 
   private def simpleEvent = TraceEvent.ToolExecuted("test-tool", """{"q":"hello"}""", "result", 100, true)

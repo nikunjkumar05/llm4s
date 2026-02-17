@@ -732,6 +732,7 @@ class ExaSearchToolSpec extends AnyFlatSpec with Matchers {
 
     override def delete(url: String, headers: Map[String, String], timeout: Int): HttpResponse =
       response
+    override def postRaw(url: String, headers: Map[String, String], body: String, timeout: Int) = ???
   }
 
   class FailingHttpClient(exception: Throwable) extends Llm4sHttpClient {
@@ -763,6 +764,7 @@ class ExaSearchToolSpec extends AnyFlatSpec with Matchers {
 
     override def delete(url: String, headers: Map[String, String], timeout: Int): HttpResponse =
       fail
+    override def postRaw(url: String, headers: Map[String, String], body: String, timeout: Int) = ???
   }
 
   "search method" should "handle successful 200 response and return ExaSearchResult" in {
