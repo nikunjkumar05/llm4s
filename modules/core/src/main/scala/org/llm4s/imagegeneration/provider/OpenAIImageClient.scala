@@ -133,9 +133,9 @@ class OpenAIImageClient(config: OpenAIConfig, httpClient: HttpClient) extends Im
         if (response.statusCode == 200) {
           // reuse parseResponse logic but map ImageEditOptions to ImageGenerationOptions for compatibility
           val genOptions = ImageGenerationOptions(
-            size = options.size.fold(ImageSize.Square1024)(s => s), // API default
-            format = ImageFormat.PNG,                               // Default
-            responseFormat = options.responseFormat,                // Pass through
+            size = options.size.fold[ImageSize](ImageSize.Square1024)(s => s), // API default
+            format = ImageFormat.PNG,                                          // Default
+            responseFormat = options.responseFormat,                           // Pass through
           )
           parseResponse(response, prompt, genOptions)
         } else {
