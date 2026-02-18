@@ -77,7 +77,7 @@ export LLM_MODEL=openai/gpt-4o
 export OPENAI_API_KEY=sk-proj-...
 
 # Or Anthropic
-export LLM_MODEL=anthropic/claude-opus-4-1
+export LLM_MODEL=anthropic/claude-opus-4-6
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -87,7 +87,7 @@ LLM4S automatically handles provider selection based on your `LLM_MODEL`:
 
 ```scala
 // With LLM_MODEL=openai/gpt-4o → Uses OpenAI
-// With LLM_MODEL=anthropic/claude-opus-4-1 → Uses Anthropic
+// With LLM_MODEL=anthropic/claude-opus-4-6 → Uses Anthropic
 // With LLM_MODEL=gemini/gemini-2.0-flash → Uses Google Gemini
 // With LLM_MODEL=ollama/mistral → Uses local Ollama
 

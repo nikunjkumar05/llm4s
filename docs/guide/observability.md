@@ -1,7 +1,7 @@
 ---
 layout: page
-title: Observability
-parent: Guide
+title: Observability Guide
+parent: User Guide
 nav_order: 3
 ---
 
