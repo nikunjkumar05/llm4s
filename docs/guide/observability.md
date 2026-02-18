@@ -1,6 +1,15 @@
+---
+layout: page
+title: Observability
+parent: Guide
+nav_order: 3
+---
+
 # Observability in LLM4S
+{: .no_toc }
 
 Observability is critical for understanding the behavior of LLM-powered applications in production. LLM4S provides comprehensive tracing and monitoring capabilities through multiple backends including Langfuse, OpenTelemetry, and console-based logging.
+{: .fs-6 .fw-300 }
 
 ## Overview
 

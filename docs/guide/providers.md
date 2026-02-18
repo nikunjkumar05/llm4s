@@ -44,7 +44,7 @@ LLM4S automatically selects the provider based on your `LLM_MODEL` setting:
 ```bash
 # Format: <provider>/<model-name>
 LLM_MODEL=openai/gpt-4o              # Uses OpenAI
-LLM_MODEL=anthropic/claude-opus-4-1  # Uses Anthropic
+LLM_MODEL=anthropic/claude-opus-4-6  # Uses Anthropic
 LLM_MODEL=ollama/mistral              # Uses Ollama
 ```
 
@@ -54,7 +54,7 @@ See [MODEL_METADATA.md](/MODEL_METADATA.md) for the complete model list. Quick r
 
 **OpenAI:** `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
 
-**Anthropic:** `claude-opus-4-1`, `claude-sonnet-4-5-latest`, `claude-haiku-3-5`
+**Anthropic:** `claude-opus-4-6`, `claude-sonnet-4-5-latest`, `claude-haiku-3-5`
 
 **Google Gemini:** `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`
 
@@ -136,7 +136,7 @@ See [OpenAI Pricing](https://openai.com/pricing). Generally:
 2. **Set environment variables:**
 
 ```bash
-export LLM_MODEL=anthropic/claude-opus-4-1
+export LLM_MODEL=anthropic/claude-opus-4-6
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -164,13 +164,13 @@ llm {
 
 ### Available Models
 
-- **Best Quality:** `claude-opus-4-1` (200K context)
+- **Best Quality:** `claude-opus-4-6` (200K context)
 - **Balanced:** `claude-sonnet-4-5-latest` (200K context)
 - **Fast:** `claude-haiku-3-5` (200K context)
 
 ### Costs
 
-- `claude-opus-4-1`: $3-$15 per 1M input tokens
+- `claude-opus-4-6`: $3-$15 per 1M input tokens
 - `claude-sonnet`: $3-$15 per 1M input tokens
 - `claude-haiku`: $0.80-$4 per 1M input tokens
 
@@ -579,13 +579,12 @@ Switch providers at runtime:
 
 ```scala
 for {
-  // Try different providers
-  providers <- List("openai", "anthropic", "ollama")
-    .map(name => Llm4sConfig.provider(name))
+  // Get configured provider from environment
+  providerConfig <- Llm4sConfig.provider()
+  client <- LLMConnect.getClient(providerConfig)
 } yield {
   // Use the available provider
-  val client = LLMConnect.getClient(providerConfig)
-  client.complete(messages, None)
+  client.complete(conversation)
 }
 ```
 
