@@ -1,6 +1,7 @@
 package org.llm4s.toolapi.builtin.search
 
 import org.llm4s.toolapi._
+import org.llm4s.types.Result
 import upickle.default._
 import org.llm4s.config.BraveSearchToolConfig
 
@@ -235,7 +236,7 @@ object BraveSearchTool {
     config: Option[BraveSearchConfig] = None,
     httpClient: Llm4sHttpClient = Llm4sHttpClient.create(),
     restoreInterrupt: () => Unit = () => Thread.currentThread().interrupt()
-  ): ToolFunction[Map[String, Any], R] =
+  ): Result[ToolFunction[Map[String, Any], R]] =
     ToolBuilder[Map[String, Any], R](
       name = category.toolName,
       description = category.description,
@@ -252,7 +253,7 @@ object BraveSearchTool {
         )
         result <- search(query, finalConfig, toolConfig, category, httpClient, restoreInterrupt)
       } yield result
-    }.build()
+    }.buildSafe()
 
   /**
    * Create a Brave search tool with explicit API key and optional overrides.
@@ -273,7 +274,7 @@ object BraveSearchTool {
     config: Option[BraveSearchConfig] = None,
     httpClient: Llm4sHttpClient = Llm4sHttpClient.create(),
     restoreInterrupt: () => Unit = () => Thread.currentThread().interrupt()
-  ): ToolFunction[Map[String, Any], R] = {
+  ): Result[ToolFunction[Map[String, Any], R]] = {
     // Hardcoded defaults when using withApiKey
     val braveTool = BraveSearchToolConfig(
       apiKey = apiKey,
