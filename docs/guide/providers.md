@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Providers
-parent: Guide
+parent: User Guide
 nav_order: 2
 ---
 

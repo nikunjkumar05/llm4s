@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Basic Usage
-parent: Guide
+parent: User Guide
 nav_order: 1
 ---
 
@@ -41,7 +41,7 @@ The simplest way to get an LLM response:
 ```scala
 import org.llm4s.config.Llm4sConfig
 import org.llm4s.llmconnect.{LLMClient, LLMConnect}
-import org.llm4s.llmconnect.model.UserMessage
+import org.llm4s.llmconnect.model.{Conversation, UserMessage}
 
 object SimpleExample extends App {
   // Step 1: Load configuration from environment variables
@@ -50,7 +50,7 @@ object SimpleExample extends App {
     client <- LLMConnect.getClient(providerConfig)
   } yield {
     // Step 2: Create a simple message
-    val conversation = List(UserMessage("What is Scala?"))
+    val conversation = Conversation(Seq(UserMessage("What is Scala?")))
     
     // Step 3: Get a response
     val response = client.complete(conversation)
@@ -108,12 +108,12 @@ val startup = for {
   providerConfig <- Llm4sConfig.provider()
   client <- LLMConnect.getClient(providerConfig)
 } yield {
-  val conversation = List(UserMessage("Tell me about Scala"))
+  val conversation = Conversation(Seq(UserMessage("Tell me about Scala")))
   
-  // Override to use a specific model
+  // Adjust generation settings (the model is selected via LLM_MODEL env var / providerConfig)
   val response = client.complete(
     conversation,
-    CompletionOptions().copy(model = Some(ModelName("gpt-4o")))  // Force this model
+    CompletionOptions(maxTokens = Some(512))
   )
   
   response.map(completion => println(completion.content))
@@ -184,10 +184,9 @@ val result = for {
   providerConfig <- Llm4sConfig.provider()
   client <- LLMConnect.getClient(providerConfig)
   
-  // Make the LLM call
+  // Make the LLM call — complete takes a Conversation and optional CompletionOptions
   completion <- client.complete(
-    messages = List(UserMessage("Hello, LLM!")),
-    model = None
+    Conversation(Seq(UserMessage("Hello, LLM!")))
   )
 } yield {
   // All operations succeeded - work with the completion
@@ -224,7 +223,7 @@ Send simple user queries:
 
 ```scala
 val userMsg = UserMessage("What is Scala?")
-val response = client.complete(List(userMsg))
+val response = client.complete(Conversation(Seq(userMsg)))
 ```
 
 ### Assistant Messages
@@ -232,35 +231,26 @@ val response = client.complete(List(userMsg))
 Include assistant responses for multi-turn conversations:
 
 ```scala
-val messages = List(
+val conversation = Conversation(Seq(
   UserMessage("What is Scala?"),
   AssistantMessage("Scala is a functional programming language..."),
   UserMessage("Tell me more about its type system")
-)
+))
 
-val response = client.complete(messages)
+val response = client.complete(conversation)
 ```
 
 ### System Messages
 
-Set context and behavior:
+Prepend a `SystemMessage` to the conversation to set context and behavior:
 
 ```scala
-val system = ConversationSystemContext(
-  instructions = Some("You are a Scala expert. Answer concisely."),
-  tools = None,
-  inputGuardrails = None,
-  outputGuardrails = None
-)
-
-val messages = List(
+val conversation = Conversation(Seq(
+  SystemMessage("You are a Scala expert. Answer concisely."),
   UserMessage("What is a monad?")
-)
+))
 
-val response = client.complete(
-  messages,
-  CompletionOptions().copy(systemContext = Some(system))
-)
+val response = client.complete(conversation)
 ```
 
 ---
@@ -324,7 +314,7 @@ val startup = for {
 startup match {
   case Right(client) =>
     // Use the client
-    val result = client.complete(messages)
+    val result = client.complete(Conversation(Seq(UserMessage("Hello!"))))
   case Left(error) =>
     // Configuration failed - log and exit
     System.err.println(s"Startup failed: ${error.message}")
@@ -351,7 +341,7 @@ def retryWithBackoff[T](maxRetries: Int = 3)(
 
 // Usage
 val response = retryWithBackoff(3) { () =>
-  client.complete(messages)
+  client.complete(Conversation(Seq(UserMessage("Hello!"))))
 }
 ```
 
@@ -364,12 +354,13 @@ import org.slf4j.LoggerFactory
 
 val logger = LoggerFactory.getLogger(getClass)
 
-val response = client.complete(messages)
+val response = client.complete(Conversation(Seq(UserMessage("Hello!"))))
 response match {
   case Right(completion) =>
     logger.info(s"Got response: ${completion.content}")
   case Left(error) =>
-    logger.error(s"LLM call failed: ${error.message}", error)
+    // LLMError is not a Throwable, so pass only the message string
+    logger.error(s"LLM call failed: ${error.message}")
 }
 ```
 ---
