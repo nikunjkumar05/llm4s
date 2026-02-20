@@ -881,13 +881,13 @@ class RAGWithMocksSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach
       .flatMap(_.query("what is Scala?"))
 
     result.fold(
-      error => {
-        error shouldBe an[EmbeddingError]
-        val embError = error.asInstanceOf[EmbeddingError]
-        embError.message should include("empty embeddings")
-        // Assert provider field contains model name, not hardcoded "unknown"
-        embError.provider should not be "unknown"
-        embError.provider shouldBe "text-embedding-3-small"
+      {
+        case embErr: EmbeddingError =>
+          embErr.message should include("empty embeddings")
+          embErr.provider should not be "unknown"
+          embErr.provider shouldBe "text-embedding-3-small"
+        case other =>
+          fail(s"Expected EmbeddingError but got: ${other.getClass.getSimpleName}: ${other.message}")
       },
       _ => fail("Expected Left(EmbeddingError) but got Right")
     )
