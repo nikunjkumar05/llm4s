@@ -86,7 +86,7 @@ private[extraction] object GraphJsonParser {
           .left
           .map { error =>
             logger.error(s"Failed to extract graph structure from JSON: ${json}", error)
-              ProcessingError(errorCode, s"Failed to extract graph structure: ${error.message}")
+            ProcessingError(errorCode, s"Failed to extract graph structure: ${error.message}")
           }
           .flatMap { graph =>
             // Validate graph integrity at extraction boundary

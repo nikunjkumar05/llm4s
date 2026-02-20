@@ -1,7 +1,7 @@
 package org.llm4s.knowledgegraph.extraction
 
 import org.llm4s.knowledgegraph.Graph
-import org.llm4s.knowledgegraph.storage.{GraphStore, InMemoryGraphStore}
+import org.llm4s.knowledgegraph.storage.{ GraphStore, InMemoryGraphStore }
 import org.llm4s.llmconnect.LLMClient
 import org.llm4s.llmconnect.model.{ CompletionOptions, Conversation, SystemMessage, UserMessage }
 import org.llm4s.types.Result
