@@ -81,7 +81,11 @@ class RAGPipelineSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach 
     result shouldBe a[Left[_, _]]
     result.left.map { error =>
       error shouldBe an[EmbeddingError]
-      error.message should include("empty embeddings")
+      val embError = error.asInstanceOf[EmbeddingError]
+      embError.message should include("empty embeddings")
+      // Assert provider field contains model name, not hardcoded "unknown"
+      embError.provider should not be "unknown"
+      embError.provider shouldBe "text-embedding-3-small"
     }
   }
 
