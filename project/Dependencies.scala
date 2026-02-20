@@ -40,9 +40,13 @@ object Versions {
 
   // Prometheus (1.x stable)
   val prometheus = "1.4.3"
+
+  // ONNX Runtime (public Maven Central)
+  val onnxruntime = "1.16.3"
 }
 
 object Deps {
+  val onnxruntime = "com.microsoft.onnxruntime" % "onnxruntime" % Versions.onnxruntime
 
   val cats      = "org.typelevel" %% "cats-core" % Versions.cats
   val upickle   = "com.lihaoyi"   %% "upickle"   % Versions.upickle

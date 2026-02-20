@@ -3,6 +3,7 @@ package org.llm4s.config
 
 import org.llm4s.error.ConfigurationError
 import org.llm4s.llmconnect.config.{ EmbeddingProviderConfig, LocalEmbeddingModels }
+import org.llm4s.llmconnect.provider.OnnxEmbeddingProvider
 import org.llm4s.types.Result
 import pureconfig.{ ConfigReader => PureConfigReader, ConfigSource }
 
@@ -32,12 +33,27 @@ private[config] object EmbeddingsConfigLoader {
     model: Option[String]
   )
 
+  final private case class EmbeddingsOnnxSection(
+    modelPath: Option[String],
+    inputTensorName: Option[String],
+    attentionMaskTensorName: Option[String],
+    tokenTypeTensorName: Option[String],
+    outputTensorName: Option[String],
+    maxSequenceLength: Option[Int],
+    vocabSize: Option[Int],
+    intraOpNumThreads: Option[Int],
+    interOpNumThreads: Option[Int],
+    optimizationLevel: Option[String],
+    executionMode: Option[String]
+  )
+
   final private case class EmbeddingsSection(
     model: Option[String],    // Unified format: provider/model (e.g., openai/text-embedding-3-small)
     provider: Option[String], // Legacy fallback
     openai: Option[EmbeddingsOpenAISection],
     voyage: Option[EmbeddingsVoyageSection],
-    ollama: Option[EmbeddingsOllamaSection]
+    ollama: Option[EmbeddingsOllamaSection],
+    onnx: Option[EmbeddingsOnnxSection]
   )
 
   final private case class EmbeddingsRoot(embeddings: Option[EmbeddingsSection])
@@ -53,8 +69,23 @@ private[config] object EmbeddingsConfigLoader {
   implicit private val embeddingsOllamaSectionReader: PureConfigReader[EmbeddingsOllamaSection] =
     PureConfigReader.forProduct3("apiKey", "baseUrl", "model")(EmbeddingsOllamaSection.apply)
 
+  implicit private val embeddingsOnnxSectionReader: PureConfigReader[EmbeddingsOnnxSection] =
+    PureConfigReader.forProduct11(
+      "modelPath",
+      "inputTensorName",
+      "attentionMaskTensorName",
+      "tokenTypeTensorName",
+      "outputTensorName",
+      "maxSequenceLength",
+      "vocabSize",
+      "intraOpNumThreads",
+      "interOpNumThreads",
+      "optimizationLevel",
+      "executionMode"
+    )(EmbeddingsOnnxSection.apply)
+
   implicit private val embeddingsSectionReader: PureConfigReader[EmbeddingsSection] =
-    PureConfigReader.forProduct5("model", "provider", "openai", "voyage", "ollama")(EmbeddingsSection.apply)
+    PureConfigReader.forProduct6("model", "provider", "openai", "voyage", "ollama", "onnx")(EmbeddingsSection.apply)
 
   implicit private val embeddingsRootReader: PureConfigReader[EmbeddingsRoot] =
     PureConfigReader.forProduct1("embeddings")(EmbeddingsRoot.apply)
@@ -101,7 +132,7 @@ private[config] object EmbeddingsConfigLoader {
     root: EmbeddingsRoot,
     source: ConfigSource,
   ): Result[(String, EmbeddingProviderConfig)] = {
-    val emb = root.embeddings.getOrElse(EmbeddingsSection(None, None, None, None, None))
+    val emb = root.embeddings.getOrElse(EmbeddingsSection(None, None, None, None, None, None))
 
     // Check for unified model format first (e.g., "openai/text-embedding-3-small")
     emb.model.map(_.trim).filter(_.nonEmpty) match {
@@ -117,6 +148,8 @@ private[config] object EmbeddingsConfigLoader {
               buildVoyageEmbeddings(emb.voyage, Some(modelName)).map("voyage" -> _)
             case "ollama" =>
               buildOllamaEmbeddings(emb.ollama, Some(modelName)).map("ollama" -> _)
+            case "onnx" =>
+              buildOnnxEmbeddings(emb.onnx, Some(modelName)).map("onnx" -> _)
             case other =>
               Left(ConfigurationError(s"Unknown embedding provider: $other in '$modelSpec'"))
           }
@@ -137,6 +170,8 @@ private[config] object EmbeddingsConfigLoader {
             buildVoyageEmbeddings(emb.voyage, None).map("voyage" -> _)
           case Some("ollama") =>
             buildOllamaEmbeddings(emb.ollama, None).map("ollama" -> _)
+          case Some("onnx") =>
+            buildOnnxEmbeddings(emb.onnx, None).map("onnx" -> _)
           case Some(other) =>
             Left(ConfigurationError(s"Unknown embedding provider: $other"))
           case None =>
@@ -201,6 +236,48 @@ private[config] object EmbeddingsConfigLoader {
 
     val apiKey = section.flatMap(_.apiKey).getOrElse("not-required")
     Right(EmbeddingProviderConfig(baseUrl = baseUrl, model = model, apiKey = apiKey))
+  }
+
+  private def buildOnnxEmbeddings(
+    section: Option[EmbeddingsOnnxSection],
+    modelOverride: Option[String]
+  ): Result[EmbeddingProviderConfig] = {
+    val modelPathOpt = modelOverride
+      .orElse(section.flatMap(_.modelPath))
+      .map(_.trim)
+      .filter(_.nonEmpty)
+
+    val modelPathResult: Result[String] =
+      modelPathOpt.toRight(
+        ConfigurationError(
+          "Missing ONNX embeddings model path (set EMBEDDING_MODEL=onnx/path/to/model.onnx or ONNX_EMBEDDING_MODEL_PATH)"
+        )
+      )
+
+    modelPathResult.map { modelPath =>
+      def clean(value: Option[String]): Option[String] =
+        value.map(_.trim).filter(_.nonEmpty)
+
+      val options = Seq(
+        clean(section.flatMap(_.inputTensorName)).map(OnnxEmbeddingProvider.OptionInputTensorName -> _),
+        clean(section.flatMap(_.attentionMaskTensorName)).map(OnnxEmbeddingProvider.OptionAttentionMaskTensorName -> _),
+        clean(section.flatMap(_.tokenTypeTensorName)).map(OnnxEmbeddingProvider.OptionTokenTypeTensorName -> _),
+        clean(section.flatMap(_.outputTensorName)).map(OnnxEmbeddingProvider.OptionOutputTensorName -> _),
+        section.flatMap(_.maxSequenceLength).map(v => OnnxEmbeddingProvider.OptionMaxSequenceLength -> v.toString),
+        section.flatMap(_.vocabSize).map(v => OnnxEmbeddingProvider.OptionVocabSize -> v.toString),
+        section.flatMap(_.intraOpNumThreads).map(v => OnnxEmbeddingProvider.OptionIntraOpNumThreads -> v.toString),
+        section.flatMap(_.interOpNumThreads).map(v => OnnxEmbeddingProvider.OptionInterOpNumThreads -> v.toString),
+        clean(section.flatMap(_.optimizationLevel)).map(OnnxEmbeddingProvider.OptionOptimizationLevel -> _),
+        clean(section.flatMap(_.executionMode)).map(OnnxEmbeddingProvider.OptionExecutionMode -> _)
+      ).flatten.toMap
+
+      EmbeddingProviderConfig(
+        baseUrl = "",
+        model = modelPath,
+        apiKey = "not-required",
+        options = options
+      )
+    }
   }
 
   private def buildVoyageEmbeddings(

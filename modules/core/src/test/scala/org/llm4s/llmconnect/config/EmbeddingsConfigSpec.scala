@@ -88,5 +88,24 @@ class EmbeddingsConfigSpec extends AnyWordSpec with Matchers {
         cfg.apiKey shouldBe "not-required"
       }
     }
+
+    "load ONNX embeddings config via llm4s.*" in {
+      val props = Map(
+        "llm4s.embeddings.provider"               -> "onnx",
+        "llm4s.embeddings.onnx.modelPath"         -> "models/embeddings.onnx",
+        "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.onnx.maxSequenceLength" -> "256",
+        "llm4s.embeddings.onnx.executionMode"     -> "parallel"
+      )
+      withProps(props) {
+        val (provider, cfg) = Llm4sConfig.embeddings().fold(err => fail(err.toString), identity)
+        provider shouldBe "onnx"
+        cfg.model shouldBe "models/embeddings.onnx"
+        cfg.apiKey shouldBe "not-required"
+        cfg.options("inputTensorName") shouldBe "input_ids"
+        cfg.options("maxSequenceLength") shouldBe "256"
+        cfg.options("executionMode") shouldBe "parallel"
+      }
+    }
   }
 }

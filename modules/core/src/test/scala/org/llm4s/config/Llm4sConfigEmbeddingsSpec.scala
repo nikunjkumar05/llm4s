@@ -118,6 +118,53 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
       }
     }
 
+    "load ONNX embeddings via unified EMBEDDING_MODEL format" in {
+      val props = Map(
+        "llm4s.embeddings.model"                        -> "onnx/models/embeddings/model.onnx",
+        "llm4s.embeddings.onnx.inputTensorName"         -> "input_ids",
+        "llm4s.embeddings.onnx.outputTensorName"        -> "last_hidden_state",
+        "llm4s.embeddings.onnx.maxSequenceLength"       -> "384",
+        "llm4s.embeddings.onnx.optimizationLevel"       -> "extended",
+        "llm4s.embeddings.onnx.executionMode"           -> "parallel",
+        "llm4s.embeddings.onnx.attentionMaskTensorName" -> "attention_mask",
+        "llm4s.embeddings.onnx.tokenTypeTensorName"     -> "token_type_ids",
+      )
+      withProps(props) {
+        val (provider, cfg): (String, EmbeddingProviderConfig) =
+          Llm4sConfig.embeddings().fold(err => fail(err.toString), identity)
+
+        provider shouldBe "onnx"
+        cfg.model shouldBe "models/embeddings/model.onnx"
+        cfg.apiKey shouldBe "not-required"
+        cfg.baseUrl shouldBe ""
+        cfg.options("inputTensorName") shouldBe "input_ids"
+        cfg.options("outputTensorName") shouldBe "last_hidden_state"
+        cfg.options("maxSequenceLength") shouldBe "384"
+        cfg.options("optimizationLevel") shouldBe "extended"
+        cfg.options("executionMode") shouldBe "parallel"
+      }
+    }
+
+    "load ONNX embeddings via legacy provider format" in {
+      val props = Map(
+        "llm4s.embeddings.provider"               -> "onnx",
+        "llm4s.embeddings.onnx.modelPath"         -> "C:/models/local/model.onnx",
+        "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.onnx.intraOpNumThreads" -> "2",
+        "llm4s.embeddings.onnx.interOpNumThreads" -> "1"
+      )
+      withProps(props) {
+        val (provider, cfg): (String, EmbeddingProviderConfig) =
+          Llm4sConfig.embeddings().fold(err => fail(err.toString), identity)
+
+        provider shouldBe "onnx"
+        cfg.model shouldBe "C:/models/local/model.onnx"
+        cfg.options("inputTensorName") shouldBe "input_ids"
+        cfg.options("intraOpNumThreads") shouldBe "2"
+        cfg.options("interOpNumThreads") shouldBe "1"
+      }
+    }
+
     "prefer unified model format over legacy provider" in {
       val props = Map(
         "llm4s.embeddings.model"    -> "openai/text-embedding-3-large", // Takes precedence

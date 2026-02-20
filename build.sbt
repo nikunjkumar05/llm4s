@@ -157,7 +157,8 @@ lazy val core = (project in file("modules/core"))
       Deps.awsS3,
       Deps.awsSts,
       Deps.prometheusCore,
-      Deps.prometheusHttp
+      Deps.prometheusHttp,
+      Deps.onnxruntime
     )
   )
 

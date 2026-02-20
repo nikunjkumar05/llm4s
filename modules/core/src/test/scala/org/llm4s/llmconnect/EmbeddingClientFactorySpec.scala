@@ -47,6 +47,20 @@ class EmbeddingClientFactorySpec extends AnyWordSpec with Matchers {
       res.isRight shouldBe true
     }
 
+    "build client for onnx without throwing" in {
+      val cfg = EmbeddingProviderConfig(
+        baseUrl = "",
+        model = "missing-model.onnx",
+        apiKey = "not-required",
+        options = Map(
+          "inputTensorName"   -> "input_ids",
+          "maxSequenceLength" -> "128"
+        )
+      )
+      val res = EmbeddingClient.from("onnx", cfg)
+      res.isRight shouldBe true
+    }
+
     "reject unknown provider" in {
       val cfg = EmbeddingProviderConfig(
         baseUrl = "http://localhost",

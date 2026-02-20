@@ -88,6 +88,36 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
       cfg.baseUrl shouldBe "http://localhost:11434"
     }
 
+    "successfully load ONNX embeddings via provider/model format" in {
+      val hocon =
+        """
+          |llm4s {
+          |  embeddings {
+          |    model = "onnx/models/all-MiniLM-L6-v2.onnx"
+          |    onnx {
+          |      inputTensorName = "input_ids"
+          |      outputTensorName = "last_hidden_state"
+          |      maxSequenceLength = 256
+          |      executionMode = "parallel"
+          |    }
+          |  }
+          |}
+          |""".stripMargin
+
+      val result = EmbeddingsConfigLoader.loadProvider(ConfigSource.string(hocon))
+
+      result.isRight shouldBe true
+      val (provider, cfg) = result.value
+      provider shouldBe "onnx"
+      cfg.model shouldBe "models/all-MiniLM-L6-v2.onnx"
+      cfg.apiKey shouldBe "not-required"
+      cfg.baseUrl shouldBe ""
+      cfg.options("inputTensorName") shouldBe "input_ids"
+      cfg.options("outputTensorName") shouldBe "last_hidden_state"
+      cfg.options("maxSequenceLength") shouldBe "256"
+      cfg.options("executionMode") shouldBe "parallel"
+    }
+
     "use custom baseUrl when provided for OpenAI embeddings" in {
       val hocon =
         """
@@ -227,6 +257,34 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
       cfg.baseUrl shouldBe "http://ollama-server:11434"
     }
 
+    "successfully load ONNX embeddings via legacy provider setting" in {
+      val hocon =
+        """
+          |llm4s {
+          |  embeddings {
+          |    provider = "onnx"
+          |    onnx {
+          |      modelPath = "models/mini-lm.onnx"
+          |      inputTensorName = "input_ids"
+          |      attentionMaskTensorName = "attention_mask"
+          |      vocabSize = 30522
+          |    }
+          |  }
+          |}
+          |""".stripMargin
+
+      val result = EmbeddingsConfigLoader.loadProvider(ConfigSource.string(hocon))
+
+      result.isRight shouldBe true
+      val (provider, cfg) = result.value
+      provider shouldBe "onnx"
+      cfg.model shouldBe "models/mini-lm.onnx"
+      cfg.apiKey shouldBe "not-required"
+      cfg.options("inputTensorName") shouldBe "input_ids"
+      cfg.options("attentionMaskTensorName") shouldBe "attention_mask"
+      cfg.options("vocabSize") shouldBe "30522"
+    }
+
     "fail with clear error for unknown legacy provider" in {
       val hocon =
         """
@@ -354,6 +412,27 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
       result.isLeft shouldBe true
       val error = result.left.value
       error.message should include("Missing Voyage embeddings model")
+    }
+
+    "fail with clear error when ONNX model path is missing in legacy mode" in {
+      val hocon =
+        """
+          |llm4s {
+          |  embeddings {
+          |    provider = "onnx"
+          |    onnx {
+          |      inputTensorName = "input_ids"
+          |    }
+          |  }
+          |}
+          |""".stripMargin
+
+      val result = EmbeddingsConfigLoader.loadProvider(ConfigSource.string(hocon))
+
+      result.isLeft shouldBe true
+      val error = result.left.value
+      error.message should include("Missing ONNX embeddings model path")
+      error.message should include("ONNX_EMBEDDING_MODEL_PATH")
     }
   }
 
