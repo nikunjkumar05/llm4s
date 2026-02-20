@@ -211,9 +211,8 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         result.value.embeddings should have size 1
         result.value.embeddings.head should not be empty
         result.value.metadata("provider") shouldBe "onnx"
-      } finally {
+      } finally
         provider.close()
-      }
     }
 
     "return an embedding error when configured input tensor name does not exist" in {
@@ -237,9 +236,8 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         val result = provider.embed(request)
         result.isLeft shouldBe true
         result.left.value.message should include("Configured input tensor 'missing_input_tensor' not found")
-      } finally {
+      } finally
         provider.close()
-      }
     }
 
     "return an embedding error when configured output tensor name does not exist" in {
@@ -263,9 +261,8 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         val result = provider.embed(request)
         result.isLeft shouldBe true
         result.left.value.message should include("Configured output tensor 'missing_output_tensor' not found")
-      } finally {
+      } finally
         provider.close()
-      }
     }
   }
 }
