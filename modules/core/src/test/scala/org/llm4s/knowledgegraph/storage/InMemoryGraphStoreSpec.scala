@@ -17,6 +17,40 @@ import org.llm4s.knowledgegraph.{ Edge, Node }
  * - Property filtering support
  */
 class InMemoryGraphStoreSpec extends AnyFunSuite with Matchers {
+  test("concurrent writes from multiple threads should not lose updates or corrupt state") {
+    val store          = new InMemoryGraphStore()
+    val threadCount    = 20
+    val nodesPerThread = 10
+    val threads = (1 to threadCount).map { tIdx =>
+      new Thread(() => {
+        val base = tIdx * 1000
+        (1 to nodesPerThread).foreach { nIdx =>
+          val nodeId = (base + nIdx).toString
+          val node   = Node(nodeId, s"Thread$tIdx-Node$nIdx")
+          store.upsertNode(node)
+          // Each thread also upserts an edge to previous node (if exists)
+          if (nIdx > 1) {
+            val prevId = (base + nIdx - 1).toString
+            val edge   = Edge(prevId, nodeId, s"T$tIdx")
+            store.upsertEdge(edge)
+          }
+        }
+      })
+    }
+    threads.foreach(_.start())
+    threads.foreach(_.join())
+
+    // After all threads complete, verify all nodes and edges are present
+    val graph             = store.loadAll().toOption.get
+    val expectedNodeCount = threadCount * nodesPerThread
+    val expectedEdgeCount = threadCount * (nodesPerThread - 1)
+    graph.nodes should have size expectedNodeCount
+    graph.edges should have size expectedEdgeCount
+
+    // Check for unique node IDs and edge consistency
+    graph.nodes.keys.toSet.size shouldBe expectedNodeCount
+    graph.edges.map(e => (e.source, e.target)).toSet.size shouldBe expectedEdgeCount
+  }
 
   test("upsertNode should insert a new node") {
     val store = new InMemoryGraphStore()

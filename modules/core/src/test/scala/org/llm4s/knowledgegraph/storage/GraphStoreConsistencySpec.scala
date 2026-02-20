@@ -8,7 +8,7 @@ import java.nio.file.Files
 /**
  * Contract consistency tests for all GraphStore implementations.
  *
- * These tests run against multiple implementations (InMemory, SQLite, JSON) to ensure:
+ * These tests run against multiple implementations (InMemory, JSON) to ensure:
  * 1. BFS traversal produces identical results
  * 2. Error handling is consistent (especially for missing start nodes)
  * 3. Property filtering returns same nodes across implementations
@@ -23,17 +23,6 @@ class GraphStoreConsistencySpec extends AnyFunSuite with Matchers {
     test(s"$testName (InMemoryGraphStore)") {
       val store = new InMemoryGraphStore()
       fn(store)
-    }
-
-    test(s"$testName (SQLiteGraphStore)") {
-      val dbPath = Files.createTempDirectory("llm4s-test-").resolve("test.db")
-      val store  = new SQLiteGraphStore(dbPath)
-      try
-        fn(store)
-      finally {
-        store.close()
-        Files.deleteIfExists(dbPath)
-      }
     }
 
     test(s"$testName (JsonGraphStore)") {

@@ -222,7 +222,7 @@ class JsonGraphStore(path: Path) extends GraphStore {
 
   def load(): Result[Graph] =
     if (!Files.exists(path)) {
-      // Initialize with empty graph if file doesn't exist (similar to SQLiteGraphStore schema initialization)
+      // Initialize with empty graph if file doesn't exist
       val emptyGraph = Graph(Map.empty, List.empty)
       persistGraph(emptyGraph).map(_ => emptyGraph)
     } else {

@@ -1,14 +1,10 @@
 package org.llm4s.knowledgegraph.extraction
 
-import org.llm4s.knowledgegraph.{ Edge, Graph, Node }
-import org.llm4s.knowledgegraph.storage.{ GraphStore, InMemoryGraphStore }
+import org.llm4s.knowledgegraph.Graph
+import org.llm4s.knowledgegraph.storage.{GraphStore, InMemoryGraphStore}
 import org.llm4s.llmconnect.LLMClient
 import org.llm4s.llmconnect.model.{ CompletionOptions, Conversation, SystemMessage, UserMessage }
-import org.llm4s.types.{ Result, TryOps }
-import org.llm4s.error.ProcessingError
-import org.slf4j.LoggerFactory
-
-import scala.util.Try
+import org.llm4s.types.Result
 
 /**
  * Generates a Knowledge Graph from unstructured text using an LLM and writes it to a GraphStore.
@@ -17,7 +13,6 @@ import scala.util.Try
  * @param graphStore The graph store to write extracted entities and relationships to
  */
 class KnowledgeGraphGenerator(llmClient: LLMClient, graphStore: GraphStore) {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   /**
    * Backward-compatible constructor that uses in-memory graph storage.
@@ -85,57 +80,10 @@ class KnowledgeGraphGenerator(llmClient: LLMClient, graphStore: GraphStore) {
        |""".stripMargin
   }
 
-  private def parseGraph(jsonStr: String): Result[Graph] = {
-    // Strip markdown code blocks if present, handling various formats
-    val cleanJson = jsonStr.trim
-      .stripPrefix("```json")
-      .stripPrefix("```")
-      .stripSuffix("```")
-      .trim
-
-    Try {
-      val json = ujson.read(cleanJson)
-
-      // Validate required fields
-      if (!json.obj.contains("nodes") || !json.obj.contains("edges")) {
-        throw new IllegalArgumentException("JSON must contain 'nodes' and 'edges' fields")
-      }
-
-      val nodes = json("nodes").arr
-        .map { n =>
-          val id    = n("id").str
-          val label = n("label").str
-          val props = if (n.obj.contains("properties")) {
-            n("properties").obj.toMap
-          } else {
-            Map.empty[String, ujson.Value]
-          }
-          Node(id, label, props)
-        }
-        .map(n => n.id -> n)
-        .toMap
-
-      val edges = json("edges").arr.map { e =>
-        val source = e("source").str
-        val target = e("target").str
-        val rel    = e("relationship").str
-        val props = if (e.obj.contains("properties")) {
-          e("properties").obj.toMap
-        } else {
-          Map.empty[String, ujson.Value]
-        }
-        Edge(source, target, rel, props)
-      }.toList
-
-      val graph = Graph(nodes, edges)
-
-      // Validate graph integrity at extraction boundary
-      graph.validate().map(_ => graph)
-    }.toResult.left.map { error =>
-      logger.error(s"Failed to parse graph JSON: $cleanJson", error)
-      ProcessingError("knowledge_graph_extraction", s"Failed to parse LLM output as graph: ${error.message}")
-    }.flatten
-  }
+  private def parseGraph(jsonStr: String): Result[Graph] =
+    // Delegate parsing (and extraction validation) to the central parser which
+    // guarantees it will return a ProcessingError instead of throwing.
+    GraphJsonParser.parse(jsonStr, "knowledge_graph_extraction")
 
   private def writeGraphToStore(graph: Graph): Result[Unit] = {
     val nodeResult = graph.nodes.values.toSeq

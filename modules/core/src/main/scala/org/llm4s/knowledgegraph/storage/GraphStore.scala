@@ -17,7 +17,7 @@ object Direction {
  * Configuration for graph traversal operations.
  *
  * @param maxDepth Maximum number of hops/edges to traverse from the start node (inclusive)
- * @param direction Direction of traversal (Outgoing, Incoming, Both)
+ * @param direction Direction of traversal (Outgoing, Incoming, Both). Controls whether traversal follows outgoing, incoming, or all edges from each node.
  * @param visitedNodeIds Optional set of already-visited nodes to exclude
  */
 case class TraversalConfig(
@@ -136,7 +136,7 @@ trait GraphStore {
    * since traversal of a non-existent node yields no nodes.
    *
    * @param startId The ID of the starting node
-   * @param config Traversal configuration (depth, direction, visited set)
+   * @param config Traversal configuration (depth, direction, visited set). The direction parameter controls whether traversal follows outgoing, incoming, or all edges from each node.
    * @return Right(Seq of traversed nodes) on success, Left(error) on critical failure
    */
   def traverse(startId: String, config: TraversalConfig = TraversalConfig()): Result[Seq[Node]]

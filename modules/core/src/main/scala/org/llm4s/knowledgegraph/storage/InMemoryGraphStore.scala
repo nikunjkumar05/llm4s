@@ -27,7 +27,7 @@ class InMemoryGraphStore(initialGraph: Graph = Graph.empty) extends GraphStore {
 
   override def upsertEdge(edge: Edge): Result[Unit] = {
     val updated = atomicUpdate { graph =>
-      // Validate both endpoints exist
+      // CAS correctness: re-check node existence on every retry
       if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) {
         Left(ProcessingError("validation", "source or target node does not exist"))
       } else {
