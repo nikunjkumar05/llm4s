@@ -151,12 +151,12 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
 
     "load ONNX embeddings via legacy provider format" in {
       val props = Map(
-        "llm4s.embeddings.provider"               -> "onnx",
-        "llm4s.embeddings.onnx.modelPath"         -> "C:/models/local/model.onnx",
-        "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.provider"                -> "onnx",
+        "llm4s.embeddings.onnx.modelPath"          -> "C:/models/local/model.onnx",
+        "llm4s.embeddings.onnx.inputTensorName"    -> "input_ids",
         "llm4s.embeddings.onnx.tokenizerVocabPath" -> "C:/models/local/vocab.txt",
-        "llm4s.embeddings.onnx.intraOpNumThreads" -> "2",
-        "llm4s.embeddings.onnx.interOpNumThreads" -> "1"
+        "llm4s.embeddings.onnx.intraOpNumThreads"  -> "2",
+        "llm4s.embeddings.onnx.interOpNumThreads"  -> "1"
       )
       withProps(props) {
         val (provider, cfg): (String, EmbeddingProviderConfig) =

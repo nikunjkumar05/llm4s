@@ -7,7 +7,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class EmbeddingClientLifecycleSpec extends AnyWordSpec with Matchers {
-  private final class CountingProvider extends EmbeddingProvider {
+  final private class CountingProvider extends EmbeddingProvider {
     var closeCalls = 0
 
     override def embed(request: EmbeddingRequest): Either[EmbeddingError, EmbeddingResponse] =

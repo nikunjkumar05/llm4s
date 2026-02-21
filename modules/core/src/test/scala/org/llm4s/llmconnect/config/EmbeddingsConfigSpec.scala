@@ -91,12 +91,12 @@ class EmbeddingsConfigSpec extends AnyWordSpec with Matchers {
 
     "load ONNX embeddings config via llm4s.*" in {
       val props = Map(
-        "llm4s.embeddings.provider"               -> "onnx",
-        "llm4s.embeddings.onnx.modelPath"         -> "models/embeddings.onnx",
-        "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.provider"                -> "onnx",
+        "llm4s.embeddings.onnx.modelPath"          -> "models/embeddings.onnx",
+        "llm4s.embeddings.onnx.inputTensorName"    -> "input_ids",
         "llm4s.embeddings.onnx.tokenizerVocabPath" -> "models/vocab.txt",
-        "llm4s.embeddings.onnx.maxSequenceLength" -> "256",
-        "llm4s.embeddings.onnx.executionMode"     -> "parallel"
+        "llm4s.embeddings.onnx.maxSequenceLength"  -> "256",
+        "llm4s.embeddings.onnx.executionMode"      -> "parallel"
       )
       withProps(props) {
         val (provider, cfg) = Llm4sConfig.embeddings().fold(err => fail(err.toString), identity)

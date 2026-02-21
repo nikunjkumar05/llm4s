@@ -11,7 +11,7 @@ import java.nio.file.{ Files, Path }
 import scala.util.Using
 
 class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherValues {
-  private final class TempVocab(tokens: Seq[String]) extends AutoCloseable {
+  final private class TempVocab(tokens: Seq[String]) extends AutoCloseable {
     private val dir = Files.createTempDirectory("onnx-vocab-spec-")
     val path: Path  = dir.resolve("vocab.txt")
 
