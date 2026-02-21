@@ -41,6 +41,12 @@ private[config] object EmbeddingsConfigLoader {
     outputTensorName: Option[String],
     maxSequenceLength: Option[Int],
     vocabSize: Option[Int],
+    tokenizerVocabPath: Option[String],
+    tokenizerDoLowerCase: Option[Boolean],
+    tokenizerUnknownToken: Option[String],
+    tokenizerClsToken: Option[String],
+    tokenizerSepToken: Option[String],
+    tokenizerPadToken: Option[String],
     intraOpNumThreads: Option[Int],
     interOpNumThreads: Option[Int],
     optimizationLevel: Option[String],
@@ -70,7 +76,7 @@ private[config] object EmbeddingsConfigLoader {
     PureConfigReader.forProduct3("apiKey", "baseUrl", "model")(EmbeddingsOllamaSection.apply)
 
   implicit private val embeddingsOnnxSectionReader: PureConfigReader[EmbeddingsOnnxSection] =
-    PureConfigReader.forProduct11(
+    PureConfigReader.forProduct17(
       "modelPath",
       "inputTensorName",
       "attentionMaskTensorName",
@@ -78,6 +84,12 @@ private[config] object EmbeddingsConfigLoader {
       "outputTensorName",
       "maxSequenceLength",
       "vocabSize",
+      "tokenizerVocabPath",
+      "tokenizerDoLowerCase",
+      "tokenizerUnknownToken",
+      "tokenizerClsToken",
+      "tokenizerSepToken",
+      "tokenizerPadToken",
       "intraOpNumThreads",
       "interOpNumThreads",
       "optimizationLevel",
@@ -265,6 +277,14 @@ private[config] object EmbeddingsConfigLoader {
         clean(section.flatMap(_.outputTensorName)).map(OnnxEmbeddingProvider.OptionOutputTensorName -> _),
         section.flatMap(_.maxSequenceLength).map(v => OnnxEmbeddingProvider.OptionMaxSequenceLength -> v.toString),
         section.flatMap(_.vocabSize).map(v => OnnxEmbeddingProvider.OptionVocabSize -> v.toString),
+        clean(section.flatMap(_.tokenizerVocabPath)).map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> _),
+        section
+          .flatMap(_.tokenizerDoLowerCase)
+          .map(v => OnnxEmbeddingProvider.OptionTokenizerDoLowerCase -> v.toString),
+        clean(section.flatMap(_.tokenizerUnknownToken)).map(OnnxEmbeddingProvider.OptionTokenizerUnknownToken -> _),
+        clean(section.flatMap(_.tokenizerClsToken)).map(OnnxEmbeddingProvider.OptionTokenizerClsToken -> _),
+        clean(section.flatMap(_.tokenizerSepToken)).map(OnnxEmbeddingProvider.OptionTokenizerSepToken -> _),
+        clean(section.flatMap(_.tokenizerPadToken)).map(OnnxEmbeddingProvider.OptionTokenizerPadToken -> _),
         section.flatMap(_.intraOpNumThreads).map(v => OnnxEmbeddingProvider.OptionIntraOpNumThreads -> v.toString),
         section.flatMap(_.interOpNumThreads).map(v => OnnxEmbeddingProvider.OptionInterOpNumThreads -> v.toString),
         clean(section.flatMap(_.optimizationLevel)).map(OnnxEmbeddingProvider.OptionOptimizationLevel -> _),

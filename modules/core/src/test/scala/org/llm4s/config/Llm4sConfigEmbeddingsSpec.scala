@@ -126,6 +126,8 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
         "llm4s.embeddings.onnx.maxSequenceLength"       -> "384",
         "llm4s.embeddings.onnx.optimizationLevel"       -> "extended",
         "llm4s.embeddings.onnx.executionMode"           -> "parallel",
+        "llm4s.embeddings.onnx.tokenizerVocabPath"      -> "models/embeddings/vocab.txt",
+        "llm4s.embeddings.onnx.tokenizerDoLowerCase"    -> "false",
         "llm4s.embeddings.onnx.attentionMaskTensorName" -> "attention_mask",
         "llm4s.embeddings.onnx.tokenTypeTensorName"     -> "token_type_ids",
       )
@@ -142,6 +144,8 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
         cfg.options("maxSequenceLength") shouldBe "384"
         cfg.options("optimizationLevel") shouldBe "extended"
         cfg.options("executionMode") shouldBe "parallel"
+        cfg.options("tokenizerVocabPath") shouldBe "models/embeddings/vocab.txt"
+        cfg.options("tokenizerDoLowerCase") shouldBe "false"
       }
     }
 
@@ -150,6 +154,7 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
         "llm4s.embeddings.provider"               -> "onnx",
         "llm4s.embeddings.onnx.modelPath"         -> "C:/models/local/model.onnx",
         "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.onnx.tokenizerVocabPath" -> "C:/models/local/vocab.txt",
         "llm4s.embeddings.onnx.intraOpNumThreads" -> "2",
         "llm4s.embeddings.onnx.interOpNumThreads" -> "1"
       )
@@ -160,6 +165,7 @@ class Llm4sConfigEmbeddingsSpec extends AnyWordSpec with Matchers {
         provider shouldBe "onnx"
         cfg.model shouldBe "C:/models/local/model.onnx"
         cfg.options("inputTensorName") shouldBe "input_ids"
+        cfg.options("tokenizerVocabPath") shouldBe "C:/models/local/vocab.txt"
         cfg.options("intraOpNumThreads") shouldBe "2"
         cfg.options("interOpNumThreads") shouldBe "1"
       }

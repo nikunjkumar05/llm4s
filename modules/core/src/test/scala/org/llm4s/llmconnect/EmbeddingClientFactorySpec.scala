@@ -53,8 +53,9 @@ class EmbeddingClientFactorySpec extends AnyWordSpec with Matchers {
         model = "missing-model.onnx",
         apiKey = "not-required",
         options = Map(
-          "inputTensorName"   -> "input_ids",
-          "maxSequenceLength" -> "128"
+          "inputTensorName"    -> "input_ids",
+          "maxSequenceLength"  -> "128",
+          "tokenizerVocabPath" -> "missing-vocab.txt"
         )
       )
       val res = EmbeddingClient.from("onnx", cfg)

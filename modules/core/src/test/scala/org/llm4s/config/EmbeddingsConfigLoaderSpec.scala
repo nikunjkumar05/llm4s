@@ -98,6 +98,8 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
           |      inputTensorName = "input_ids"
           |      outputTensorName = "last_hidden_state"
           |      maxSequenceLength = 256
+          |      tokenizerVocabPath = "models/tokenizer/vocab.txt"
+          |      tokenizerDoLowerCase = false
           |      executionMode = "parallel"
           |    }
           |  }
@@ -115,6 +117,8 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
       cfg.options("inputTensorName") shouldBe "input_ids"
       cfg.options("outputTensorName") shouldBe "last_hidden_state"
       cfg.options("maxSequenceLength") shouldBe "256"
+      cfg.options("tokenizerVocabPath") shouldBe "models/tokenizer/vocab.txt"
+      cfg.options("tokenizerDoLowerCase") shouldBe "false"
       cfg.options("executionMode") shouldBe "parallel"
     }
 
@@ -267,6 +271,7 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
           |      modelPath = "models/mini-lm.onnx"
           |      inputTensorName = "input_ids"
           |      attentionMaskTensorName = "attention_mask"
+          |      tokenizerVocabPath = "models/mini-lm/vocab.txt"
           |      vocabSize = 30522
           |    }
           |  }
@@ -282,6 +287,7 @@ class EmbeddingsConfigLoaderSpec extends AnyWordSpec with Matchers with EitherVa
       cfg.apiKey shouldBe "not-required"
       cfg.options("inputTensorName") shouldBe "input_ids"
       cfg.options("attentionMaskTensorName") shouldBe "attention_mask"
+      cfg.options("tokenizerVocabPath") shouldBe "models/mini-lm/vocab.txt"
       cfg.options("vocabSize") shouldBe "30522"
     }
 

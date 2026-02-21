@@ -7,6 +7,10 @@ import org.llm4s.llmconnect.model.{ EmbeddingError, EmbeddingRequest, EmbeddingR
 import org.slf4j.LoggerFactory
 
 import java.nio.LongBuffer
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Paths }
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.Try
@@ -19,14 +23,18 @@ final case class OnnxEmbeddingSettings(
   tokenTypeTensorName: Option[String] = Some(OnnxEmbeddingProvider.DefaultTokenTypeTensorName),
   outputTensorName: Option[String] = None,
   maxSequenceLength: Int = OnnxEmbeddingProvider.DefaultMaxSequenceLength,
-  vocabSize: Int = OnnxEmbeddingProvider.DefaultVocabSize,
+  tokenizerVocabPath: Option[String] = None,
+  tokenizerDoLowerCase: Boolean = OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase,
+  tokenizerUnknownToken: String = OnnxEmbeddingProvider.DefaultUnknownToken,
+  tokenizerClsToken: String = OnnxEmbeddingProvider.DefaultClsToken,
+  tokenizerSepToken: String = OnnxEmbeddingProvider.DefaultSepToken,
+  tokenizerPadToken: String = OnnxEmbeddingProvider.DefaultPadToken,
   intraOpNumThreads: Option[Int] = None,
   interOpNumThreads: Option[Int] = None,
   optimizationLevel: Option[OptLevel] = None,
   executionMode: Option[ExecutionMode] = None
 ) {
   require(maxSequenceLength >= 2, "maxSequenceLength must be >= 2")
-  require(vocabSize > 1, "vocabSize must be > 1")
 }
 
 object OnnxEmbeddingProvider {
@@ -35,20 +43,37 @@ object OnnxEmbeddingProvider {
   val DefaultAttentionMaskTensorName = "attention_mask"
   val DefaultTokenTypeTensorName     = "token_type_ids"
   val DefaultMaxSequenceLength       = 256
-  val DefaultVocabSize               = 30522
-  val OptionInputTensorName          = "inputTensorName"
-  val OptionAttentionMaskTensorName  = "attentionMaskTensorName"
-  val OptionTokenTypeTensorName      = "tokenTypeTensorName"
-  val OptionOutputTensorName         = "outputTensorName"
-  val OptionMaxSequenceLength        = "maxSequenceLength"
-  val OptionVocabSize                = "vocabSize"
-  val OptionIntraOpNumThreads        = "intraOpNumThreads"
-  val OptionInterOpNumThreads        = "interOpNumThreads"
-  val OptionOptimizationLevel        = "optimizationLevel"
-  val OptionExecutionMode            = "executionMode"
-  private val logger                 = LoggerFactory.getLogger(getClass)
+  val DefaultUnknownToken            = "[UNK]"
+  val DefaultClsToken                = "[CLS]"
+  val DefaultSepToken                = "[SEP]"
+  val DefaultPadToken                = "[PAD]"
+  val DefaultTokenizerDoLowerCase    = true
+
+  val OptionInputTensorName         = "inputTensorName"
+  val OptionAttentionMaskTensorName = "attentionMaskTensorName"
+  val OptionTokenTypeTensorName     = "tokenTypeTensorName"
+  val OptionOutputTensorName        = "outputTensorName"
+  val OptionMaxSequenceLength       = "maxSequenceLength"
+  val OptionVocabSize               = "vocabSize" // Deprecated: kept for backward compatibility only.
+  val OptionTokenizerVocabPath      = "tokenizerVocabPath"
+  val OptionTokenizerDoLowerCase    = "tokenizerDoLowerCase"
+  val OptionTokenizerUnknownToken   = "tokenizerUnknownToken"
+  val OptionTokenizerClsToken       = "tokenizerClsToken"
+  val OptionTokenizerSepToken       = "tokenizerSepToken"
+  val OptionTokenizerPadToken       = "tokenizerPadToken"
+  val OptionIntraOpNumThreads       = "intraOpNumThreads"
+  val OptionInterOpNumThreads       = "interOpNumThreads"
+  val OptionOptimizationLevel       = "optimizationLevel"
+  val OptionExecutionMode           = "executionMode"
+  private val logger                = LoggerFactory.getLogger(getClass)
 
   def fromConfig(cfg: EmbeddingProviderConfig): EmbeddingProvider = {
+    if (readPositiveIntOption(cfg, OptionVocabSize).isDefined) {
+      logger.warn(
+        s"[OnnxEmbeddingProvider] '$OptionVocabSize' is ignored. Configure tokenizer assets via '$OptionTokenizerVocabPath'."
+      )
+    }
+
     val settings = OnnxEmbeddingSettings(
       inputTensorName = readStringOption(cfg, OptionInputTensorName).getOrElse(DefaultInputTensorName),
       attentionMaskTensorName =
@@ -56,7 +81,12 @@ object OnnxEmbeddingProvider {
       tokenTypeTensorName = readTensorNameOption(cfg, OptionTokenTypeTensorName, Some(DefaultTokenTypeTensorName)),
       outputTensorName = readTensorNameOption(cfg, OptionOutputTensorName, None),
       maxSequenceLength = readPositiveIntOption(cfg, OptionMaxSequenceLength).getOrElse(DefaultMaxSequenceLength),
-      vocabSize = readPositiveIntOption(cfg, OptionVocabSize).getOrElse(DefaultVocabSize),
+      tokenizerVocabPath = readStringOption(cfg, OptionTokenizerVocabPath),
+      tokenizerDoLowerCase = readBooleanOption(cfg, OptionTokenizerDoLowerCase).getOrElse(DefaultTokenizerDoLowerCase),
+      tokenizerUnknownToken = readStringOption(cfg, OptionTokenizerUnknownToken).getOrElse(DefaultUnknownToken),
+      tokenizerClsToken = readStringOption(cfg, OptionTokenizerClsToken).getOrElse(DefaultClsToken),
+      tokenizerSepToken = readStringOption(cfg, OptionTokenizerSepToken).getOrElse(DefaultSepToken),
+      tokenizerPadToken = readStringOption(cfg, OptionTokenizerPadToken).getOrElse(DefaultPadToken),
       intraOpNumThreads = readPositiveIntOption(cfg, OptionIntraOpNumThreads),
       interOpNumThreads = readPositiveIntOption(cfg, OptionInterOpNumThreads),
       optimizationLevel = readOptimizationLevel(cfg, OptionOptimizationLevel),
@@ -85,6 +115,15 @@ object OnnxEmbeddingProvider {
         logger.warn(s"[OnnxEmbeddingProvider] Invalid integer value '$raw' for option '$key'; ignoring")
         None
       }
+    }
+
+  private def readBooleanOption(cfg: EmbeddingProviderConfig, key: String): Option[Boolean] =
+    readStringOption(cfg, key).flatMap {
+      case raw if raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("yes") || raw == "1" => Some(true)
+      case raw if raw.equalsIgnoreCase("false") || raw.equalsIgnoreCase("no") || raw == "0" => Some(false)
+      case raw =>
+        logger.warn(s"[OnnxEmbeddingProvider] Invalid boolean value '$raw' for option '$key'; ignoring")
+        None
     }
 
   private def readOptimizationLevel(cfg: EmbeddingProviderConfig, key: String): Option[OptLevel] =
@@ -204,57 +243,222 @@ object OnnxEmbeddingProvider {
       val divisor = if (count == 0) 1.0 else count.toDouble
       sums.iterator.map(_ / divisor).toVector
     }
+
+  final private[provider] case class WordPieceTokenizer private (
+    vocab: Map[String, Long],
+    doLowerCase: Boolean,
+    unknownToken: String,
+    clsToken: String,
+    sepToken: String,
+    padToken: String
+  ) {
+    private val unknownTokenId = vocab(unknownToken)
+    private val clsTokenId     = vocab(clsToken)
+    private val sepTokenId     = vocab(sepToken)
+    private val padId          = vocab(padToken)
+
+    def encode(text: String, maxSequenceLength: Int): Array[Long] = {
+      val maxBodyTokens = math.max(0, maxSequenceLength - 2)
+      val bodyTokenIds = basicTokenize(text).iterator
+        .flatMap(wordPieceTokenize)
+        .take(maxBodyTokens)
+        .map(piece => vocab.getOrElse(piece, unknownTokenId))
+        .toArray
+
+      val withSpecial = Array(clsTokenId) ++ bodyTokenIds ++ Array(sepTokenId)
+      if (withSpecial.length >= maxSequenceLength) withSpecial.take(maxSequenceLength)
+      else withSpecial ++ Array.fill(maxSequenceLength - withSpecial.length)(padId)
+    }
+
+    def padTokenId: Long = padId
+
+    private def basicTokenize(text: String): Vector[String] = {
+      val normalized = if (doLowerCase) text.toLowerCase(Locale.ROOT) else text
+      val output     = mutable.ArrayBuffer.empty[String]
+      val current    = new StringBuilder()
+
+      def flushCurrent(): Unit =
+        if (current.nonEmpty) {
+          output += current.result()
+          current.clear()
+        }
+
+      var i = 0
+      while (i < normalized.length) {
+        val ch = normalized.charAt(i)
+        if (Character.isWhitespace(ch)) {
+          flushCurrent()
+        } else if (isControl(ch)) {
+          flushCurrent()
+        } else if (isPunctuation(ch)) {
+          flushCurrent()
+          output += ch.toString
+        } else {
+          current.append(ch)
+        }
+        i += 1
+      }
+      flushCurrent()
+      output.toVector.filter(_.nonEmpty)
+    }
+
+    private def wordPieceTokenize(token: String): Vector[String] =
+      if (token.isEmpty) {
+        Vector.empty
+      } else {
+        val pieces = mutable.ArrayBuffer.empty[String]
+        var start  = 0
+        var bad    = false
+
+        while (start < token.length && !bad) {
+          var end   = token.length
+          var found = Option.empty[String]
+
+          while (start < end && found.isEmpty) {
+            val piece = token.substring(start, end)
+            val key   = if (start == 0) piece else s"##$piece"
+            if (vocab.contains(key)) found = Some(key)
+            else end -= 1
+          }
+
+          found match {
+            case Some(piece) =>
+              pieces += piece
+              start = end
+            case None =>
+              bad = true
+          }
+        }
+
+        if (bad) Vector(unknownToken) else pieces.toVector
+      }
+
+    private def isControl(ch: Char): Boolean =
+      ch != '\t' && ch != '\n' && ch != '\r' && Character.isISOControl(ch)
+
+    private def isPunctuation(ch: Char): Boolean = {
+      val codePoint = ch.toInt
+      (codePoint >= 33 && codePoint <= 47) ||
+      (codePoint >= 58 && codePoint <= 64) ||
+      (codePoint >= 91 && codePoint <= 96) ||
+      (codePoint >= 123 && codePoint <= 126) || {
+        val category = Character.getType(ch)
+        category == Character.CONNECTOR_PUNCTUATION ||
+        category == Character.DASH_PUNCTUATION ||
+        category == Character.START_PUNCTUATION ||
+        category == Character.END_PUNCTUATION ||
+        category == Character.INITIAL_QUOTE_PUNCTUATION ||
+        category == Character.FINAL_QUOTE_PUNCTUATION ||
+        category == Character.OTHER_PUNCTUATION
+      }
+    }
+  }
+
+  private[provider] object WordPieceTokenizer {
+    def fromVocabFile(
+      vocabPath: String,
+      doLowerCase: Boolean,
+      unknownToken: String,
+      clsToken: String,
+      sepToken: String,
+      padToken: String
+    ): Either[String, WordPieceTokenizer] =
+      try {
+        val path = Paths.get(vocabPath)
+        if (!Files.isRegularFile(path)) {
+          Left(s"Tokenizer vocabulary file not found at '$vocabPath'")
+        } else {
+          val lines = Files.readAllLines(path, StandardCharsets.UTF_8).asScala.toVector
+          val vocab = lines.zipWithIndex.collect { case (token, idx) if token.nonEmpty => token -> idx.toLong }.toMap
+          if (vocab.isEmpty) {
+            Left(s"Tokenizer vocabulary at '$vocabPath' is empty")
+          } else {
+            val requiredTokens = Seq(unknownToken, clsToken, sepToken, padToken)
+            val missingTokens  = requiredTokens.filterNot(vocab.contains)
+            if (missingTokens.nonEmpty) {
+              Left(s"Tokenizer vocabulary at '$vocabPath' is missing required tokens: ${missingTokens.mkString(", ")}")
+            } else {
+              Right(
+                WordPieceTokenizer(
+                  vocab = vocab,
+                  doLowerCase = doLowerCase,
+                  unknownToken = unknownToken,
+                  clsToken = clsToken,
+                  sepToken = sepToken,
+                  padToken = padToken
+                )
+              )
+            }
+          }
+        }
+      } catch {
+        case NonFatal(e) =>
+          Left(
+            s"Failed to read tokenizer vocabulary at '$vocabPath': ${Option(e.getMessage).getOrElse(e.getClass.getSimpleName)}"
+          )
+      }
+  }
 }
 
 final class OnnxEmbeddingProvider(
   val modelPath: String,
   val settings: OnnxEmbeddingSettings = OnnxEmbeddingSettings()
 ) extends EmbeddingProvider {
-  private val logger           = LoggerFactory.getLogger(getClass)
-  private val env              = OrtEnvironment.getEnvironment()
-  private val sessionOptions   = createSessionOptions(settings)
-  private val sessionOrError   = createSession(modelPath, sessionOptions)
-  private val clsTokenId: Long = 101L
-  private val sepTokenId: Long = 102L
-  private val padTokenId: Long = 0L
+  private val logger         = LoggerFactory.getLogger(getClass)
+  private val env            = OrtEnvironment.getEnvironment()
+  private val sessionOptions = createSessionOptions(settings)
+  private val sessionOrError = createSession(modelPath, sessionOptions)
+  private val tokenizerOrError =
+    createTokenizer(modelPath, settings)
+  private val closed = new AtomicBoolean(false)
 
   override def embed(request: EmbeddingRequest): Either[EmbeddingError, EmbeddingResponse] =
-    sessionOrError.flatMap { session =>
-      if (request.input.isEmpty) {
-        Right(
-          EmbeddingResponse(
-            embeddings = Seq.empty,
-            metadata = Map("provider" -> OnnxEmbeddingProvider.ProviderName, "model" -> modelPath, "count" -> "0"),
-          )
+    if (closed.get()) {
+      Left(
+        EmbeddingError(
+          code = None,
+          message = s"ONNX embedding provider for model '$modelPath' is already closed",
+          provider = OnnxEmbeddingProvider.ProviderName
         )
-      } else {
-        embedWithSession(session, request.input)
+      )
+    } else {
+      sessionOrError.flatMap { session =>
+        tokenizerOrError.flatMap { tokenizer =>
+          if (request.input.isEmpty) {
+            Right(
+              EmbeddingResponse(
+                embeddings = Seq.empty,
+                metadata = Map("provider" -> OnnxEmbeddingProvider.ProviderName, "model" -> modelPath, "count" -> "0")
+              )
+            )
+          } else {
+            embedWithSession(session, tokenizer, request.input)
+          }
+        }
       }
     }
 
-  /**
-   * Optional manual cleanup for long-lived apps.
-   * EmbeddingProvider does not currently define a close lifecycle hook.
-   */
-  def close(): Unit = {
-    sessionOrError.foreach { session =>
-      try session.close()
-      catch {
-        case NonFatal(e) =>
-          logger.debug(s"[OnnxEmbeddingProvider] Ignored session close error: ${e.getMessage}")
+  override def close(): Unit =
+    if (closed.compareAndSet(false, true)) {
+      sessionOrError.foreach { session =>
+        try session.close()
+        catch {
+          case NonFatal(e) =>
+            logger.debug(s"[OnnxEmbeddingProvider] Ignored session close error: ${e.getMessage}")
+        }
+      }
+      sessionOptions.foreach { options =>
+        try options.close()
+        catch {
+          case NonFatal(e) =>
+            logger.debug(s"[OnnxEmbeddingProvider] Ignored session options close error: ${e.getMessage}")
+        }
       }
     }
-    sessionOptions.foreach { options =>
-      try options.close()
-      catch {
-        case NonFatal(e) =>
-          logger.debug(s"[OnnxEmbeddingProvider] Ignored session options close error: ${e.getMessage}")
-      }
-    }
-  }
 
   private def embedWithSession(
     session: OrtSession,
+    tokenizer: OnnxEmbeddingProvider.WordPieceTokenizer,
     inputs: Seq[String]
   ): Either[EmbeddingError, EmbeddingResponse] = {
     val availableInputs = session.getInputInfo.keySet().asScala.toSet
@@ -270,7 +474,7 @@ final class OnnxEmbeddingProvider(
       )
     } else {
       resolveOutputIndex(session).flatMap { outputIndex =>
-        val vectorsOrErrors = inputs.map(text => embedSingle(session, availableInputs, outputIndex, text))
+        val vectorsOrErrors = inputs.map(text => embedSingle(session, tokenizer, availableInputs, outputIndex, text))
         val errors          = vectorsOrErrors.collect { case Left(err) => err }
         if (errors.nonEmpty) Left(errors.head)
         else {
@@ -324,12 +528,13 @@ final class OnnxEmbeddingProvider(
 
   private def embedSingle(
     session: OrtSession,
+    tokenizer: OnnxEmbeddingProvider.WordPieceTokenizer,
     availableInputs: Set[String],
     outputIndex: Int,
     text: String
   ): Either[EmbeddingError, Vector[Double]] = {
-    val tokenIds      = tokenize(text)
-    val attentionMask = tokenIds.map(id => if (id == padTokenId) 0L else 1L)
+    val tokenIds      = tokenizer.encode(text, settings.maxSequenceLength)
+    val attentionMask = tokenIds.map(id => if (id == tokenizer.padTokenId) 0L else 1L)
     val tokenTypeIds  = Array.fill[Long](tokenIds.length)(0L)
     val shape         = Array[Long](1L, tokenIds.length.toLong)
 
@@ -438,28 +643,70 @@ final class OnnxEmbeddingProvider(
         )
     }
 
-  private def tokenize(text: String): Array[Long] = {
-    val maxBodyTokens = math.max(0, settings.maxSequenceLength - 2)
-    val body = text.trim
-      .split("\\s+")
-      .iterator
-      .filter(_.nonEmpty)
-      .map(tokenToId)
-      .take(maxBodyTokens)
-      .toArray
+  private def createTokenizer(
+    path: String,
+    runtimeSettings: OnnxEmbeddingSettings
+  ): Either[EmbeddingError, OnnxEmbeddingProvider.WordPieceTokenizer] =
+    resolveTokenizerVocabPath(path, runtimeSettings).left
+      .map(message => EmbeddingError(code = None, message = message, provider = OnnxEmbeddingProvider.ProviderName))
+      .flatMap { vocabPath =>
+        OnnxEmbeddingProvider.WordPieceTokenizer
+          .fromVocabFile(
+            vocabPath = vocabPath,
+            doLowerCase = runtimeSettings.tokenizerDoLowerCase,
+            unknownToken = runtimeSettings.tokenizerUnknownToken,
+            clsToken = runtimeSettings.tokenizerClsToken,
+            sepToken = runtimeSettings.tokenizerSepToken,
+            padToken = runtimeSettings.tokenizerPadToken
+          )
+          .left
+          .map(message => EmbeddingError(code = None, message = message, provider = OnnxEmbeddingProvider.ProviderName))
+      }
 
-    val withSpecial = Array(clsTokenId) ++ body ++ Array(sepTokenId)
+  private def resolveTokenizerVocabPath(
+    path: String,
+    runtimeSettings: OnnxEmbeddingSettings
+  ): Either[String, String] =
+    runtimeSettings.tokenizerVocabPath match {
+      case Some(configuredPath) =>
+        val candidate = configuredPath.trim
+        if (candidate.isEmpty) {
+          Left(
+            s"Tokenizer vocabulary path is empty. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to a valid vocab.txt path."
+          )
+        } else {
+          try
+            if (Files.isRegularFile(Paths.get(candidate))) {
+              Right(candidate)
+            } else {
+              Left(s"Tokenizer vocabulary file not found at '$candidate'")
+            }
+          catch {
+            case NonFatal(_) =>
+              Left(s"Tokenizer vocabulary file not found at '$candidate'")
+          }
+        }
 
-    if (withSpecial.length >= settings.maxSequenceLength) {
-      withSpecial.take(settings.maxSequenceLength)
-    } else {
-      withSpecial ++ Array.fill[Long](settings.maxSequenceLength - withSpecial.length)(padTokenId)
+      case None =>
+        try {
+          val modelPath = Paths.get(path)
+          val candidates = Seq(
+            modelPath.resolveSibling("vocab.txt"),
+            modelPath.resolveSibling("tokenizer").resolve("vocab.txt")
+          )
+          candidates.find(Files.isRegularFile(_)) match {
+            case Some(found) =>
+              Right(found.toString)
+            case None =>
+              Left(
+                s"Tokenizer vocabulary not found for ONNX model '$path'. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to the matching vocab.txt."
+              )
+          }
+        } catch {
+          case NonFatal(_) =>
+            Left(
+              s"Tokenizer vocabulary not found for ONNX model '$path'. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to the matching vocab.txt."
+            )
+        }
     }
-  }
-
-  private def tokenToId(token: String): Long = {
-    val rawHash = token.hashCode
-    val safeAbs = if (rawHash == Int.MinValue) Int.MaxValue else math.abs(rawHash)
-    1L + (safeAbs % (settings.vocabSize - 1)).toLong
-  }
 }

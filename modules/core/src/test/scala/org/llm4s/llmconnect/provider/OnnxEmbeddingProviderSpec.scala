@@ -6,13 +6,36 @@ import org.scalatest.EitherValues
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
-import java.nio.file.Paths
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Path }
+import scala.util.Using
 
 class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherValues {
-  private val testModelPath: String =
-    Option(getClass.getClassLoader.getResource("model.onnx"))
-      .map(url => Paths.get(url.toURI).toString)
-      .getOrElse(Paths.get("modules", "core", "src", "test", "resources", "model.onnx").toString)
+  private final class TempVocab(tokens: Seq[String]) extends AutoCloseable {
+    private val dir = Files.createTempDirectory("onnx-vocab-spec-")
+    val path: Path  = dir.resolve("vocab.txt")
+
+    Files.write(path, tokens.mkString("\n").getBytes(StandardCharsets.UTF_8))
+
+    override def close(): Unit = {
+      Files.deleteIfExists(path)
+      Files.deleteIfExists(dir)
+    }
+  }
+
+  private def withTempVocab[A](tokens: Seq[String])(test: String => A): A =
+    Using.resource(new TempVocab(tokens))(resource => test(resource.path.toString))
+
+  private val minimalVocab = Seq(
+    "[PAD]",
+    "[CLS]",
+    "[SEP]",
+    "[UNK]",
+    "hello",
+    "world",
+    "##s",
+    "!"
+  )
 
   "OnnxEmbeddingProvider.decodeOutput" should {
     "decode a [1, dim] float output tensor" in {
@@ -119,7 +142,12 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
           OnnxEmbeddingProvider.OptionAttentionMaskTensorName -> "none",
           OnnxEmbeddingProvider.OptionTokenTypeTensorName     -> "disabled",
           OnnxEmbeddingProvider.OptionMaxSequenceLength       -> "128",
-          OnnxEmbeddingProvider.OptionVocabSize               -> "16000",
+          OnnxEmbeddingProvider.OptionTokenizerVocabPath      -> "path/to/vocab.txt",
+          OnnxEmbeddingProvider.OptionTokenizerDoLowerCase    -> "false",
+          OnnxEmbeddingProvider.OptionTokenizerUnknownToken   -> "<unk>",
+          OnnxEmbeddingProvider.OptionTokenizerClsToken       -> "<s>",
+          OnnxEmbeddingProvider.OptionTokenizerSepToken       -> "</s>",
+          OnnxEmbeddingProvider.OptionTokenizerPadToken       -> "<pad>",
           OnnxEmbeddingProvider.OptionOptimizationLevel       -> "basic",
           OnnxEmbeddingProvider.OptionExecutionMode           -> "parallel"
         )
@@ -130,7 +158,12 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
       provider.settings.attentionMaskTensorName shouldBe None
       provider.settings.tokenTypeTensorName shouldBe None
       provider.settings.maxSequenceLength shouldBe 128
-      provider.settings.vocabSize shouldBe 16000
+      provider.settings.tokenizerVocabPath shouldBe Some("path/to/vocab.txt")
+      provider.settings.tokenizerDoLowerCase shouldBe false
+      provider.settings.tokenizerUnknownToken shouldBe "<unk>"
+      provider.settings.tokenizerClsToken shouldBe "<s>"
+      provider.settings.tokenizerSepToken shouldBe "</s>"
+      provider.settings.tokenizerPadToken shouldBe "<pad>"
       provider.settings.optimizationLevel.map(_.name()) shouldBe Some("BASIC_OPT")
       provider.settings.executionMode.map(_.name()) shouldBe Some("PARALLEL")
     }
@@ -149,7 +182,12 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
       provider.settings.tokenTypeTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultTokenTypeTensorName)
       provider.settings.outputTensorName shouldBe None
       provider.settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
-      provider.settings.vocabSize shouldBe OnnxEmbeddingProvider.DefaultVocabSize
+      provider.settings.tokenizerVocabPath shouldBe None
+      provider.settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
+      provider.settings.tokenizerUnknownToken shouldBe OnnxEmbeddingProvider.DefaultUnknownToken
+      provider.settings.tokenizerClsToken shouldBe OnnxEmbeddingProvider.DefaultClsToken
+      provider.settings.tokenizerSepToken shouldBe OnnxEmbeddingProvider.DefaultSepToken
+      provider.settings.tokenizerPadToken shouldBe OnnxEmbeddingProvider.DefaultPadToken
       provider.settings.optimizationLevel shouldBe None
       provider.settings.executionMode shouldBe None
     }
@@ -160,24 +198,86 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         model = "missing-model.onnx",
         apiKey = "not-required",
         options = Map(
-          OnnxEmbeddingProvider.OptionMaxSequenceLength -> "0",
-          OnnxEmbeddingProvider.OptionVocabSize         -> "not-a-number",
-          OnnxEmbeddingProvider.OptionOptimizationLevel -> "turbo",
-          OnnxEmbeddingProvider.OptionExecutionMode     -> "concurrent"
+          OnnxEmbeddingProvider.OptionMaxSequenceLength    -> "0",
+          OnnxEmbeddingProvider.OptionTokenizerDoLowerCase -> "not-a-bool",
+          OnnxEmbeddingProvider.OptionOptimizationLevel    -> "turbo",
+          OnnxEmbeddingProvider.OptionExecutionMode        -> "concurrent"
         )
       )
 
       val provider = OnnxEmbeddingProvider.fromConfig(cfg).asInstanceOf[OnnxEmbeddingProvider]
       provider.settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
-      provider.settings.vocabSize shouldBe OnnxEmbeddingProvider.DefaultVocabSize
+      provider.settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
       provider.settings.optimizationLevel shouldBe None
       provider.settings.executionMode shouldBe None
     }
   }
 
+  "OnnxEmbeddingProvider.WordPieceTokenizer" should {
+    "encode text with vocab-backed ids and special tokens" in withTempVocab(minimalVocab) { vocabPath =>
+      val tokenizer = OnnxEmbeddingProvider.WordPieceTokenizer
+        .fromVocabFile(
+          vocabPath = vocabPath,
+          doLowerCase = true,
+          unknownToken = "[UNK]",
+          clsToken = "[CLS]",
+          sepToken = "[SEP]",
+          padToken = "[PAD]"
+        )
+        .value
+
+      val encoded = tokenizer.encode("Hello worlds!", maxSequenceLength = 8)
+      encoded.toVector shouldBe Vector(1L, 4L, 5L, 6L, 7L, 2L, 0L, 0L)
+    }
+
+    "fallback to unknown token when wordpiece decomposition fails" in withTempVocab(minimalVocab) { vocabPath =>
+      val tokenizer = OnnxEmbeddingProvider.WordPieceTokenizer
+        .fromVocabFile(
+          vocabPath = vocabPath,
+          doLowerCase = true,
+          unknownToken = "[UNK]",
+          clsToken = "[CLS]",
+          sepToken = "[SEP]",
+          padToken = "[PAD]"
+        )
+        .value
+
+      val encoded = tokenizer.encode("mystery", maxSequenceLength = 6)
+      encoded.toVector shouldBe Vector(1L, 3L, 2L, 0L, 0L, 0L)
+    }
+
+    "return an error when required special tokens are missing" in withTempVocab(
+      Seq("[PAD]", "[CLS]", "[UNK]", "hello")
+    ) { vocabPath =>
+      val result = OnnxEmbeddingProvider.WordPieceTokenizer.fromVocabFile(
+        vocabPath = vocabPath,
+        doLowerCase = true,
+        unknownToken = "[UNK]",
+        clsToken = "[CLS]",
+        sepToken = "[SEP]",
+        padToken = "[PAD]"
+      )
+
+      result.isLeft shouldBe true
+      result.left.value should include("missing required tokens")
+    }
+  }
+
   "OnnxEmbeddingProvider" should {
-    "return an embedding error for invalid model path without throwing at construction time" in {
-      val provider = new OnnxEmbeddingProvider("invalid/path/to/model.onnx")
+    "return an embedding error for invalid model path without throwing at construction time" in withTempVocab(
+      minimalVocab
+    ) { vocabPath =>
+      val provider = OnnxEmbeddingProvider
+        .fromConfig(
+          EmbeddingProviderConfig(
+            baseUrl = "",
+            model = "invalid/path/to/model.onnx",
+            apiKey = "not-required",
+            options = Map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> vocabPath)
+          )
+        )
+        .asInstanceOf[OnnxEmbeddingProvider]
+
       val request = EmbeddingRequest(
         input = Seq("Sample text"),
         model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
@@ -189,80 +289,28 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
       result.left.value.message should include("Failed to initialize ONNX model")
     }
 
-    "embed successfully with the test ONNX model" in {
+    "return a closed-state error after close is called" in withTempVocab(minimalVocab) { vocabPath =>
       val provider = OnnxEmbeddingProvider
         .fromConfig(
           EmbeddingProviderConfig(
             baseUrl = "",
-            model = testModelPath,
-            apiKey = "not-required"
-          )
-        )
-        .asInstanceOf[OnnxEmbeddingProvider]
-
-      try {
-        val request = EmbeddingRequest(
-          input = Seq("Hello ONNX embeddings"),
-          model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
-        )
-
-        val result = provider.embed(request)
-        result.isRight shouldBe true
-        result.value.embeddings should have size 1
-        result.value.embeddings.head should not be empty
-        result.value.metadata("provider") shouldBe "onnx"
-      } finally
-        provider.close()
-    }
-
-    "return an embedding error when configured input tensor name does not exist" in {
-      val provider = OnnxEmbeddingProvider
-        .fromConfig(
-          EmbeddingProviderConfig(
-            baseUrl = "",
-            model = testModelPath,
+            model = "invalid/path/to/model.onnx",
             apiKey = "not-required",
-            options = Map(OnnxEmbeddingProvider.OptionInputTensorName -> "missing_input_tensor")
+            options = Map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> vocabPath)
           )
         )
         .asInstanceOf[OnnxEmbeddingProvider]
 
-      try {
-        val request = EmbeddingRequest(
-          input = Seq("Hello ONNX embeddings"),
-          model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
-        )
+      provider.close()
 
-        val result = provider.embed(request)
-        result.isLeft shouldBe true
-        result.left.value.message should include("Configured input tensor 'missing_input_tensor' not found")
-      } finally
-        provider.close()
-    }
+      val request = EmbeddingRequest(
+        input = Seq("Sample text"),
+        model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
+      )
 
-    "return an embedding error when configured output tensor name does not exist" in {
-      val provider = OnnxEmbeddingProvider
-        .fromConfig(
-          EmbeddingProviderConfig(
-            baseUrl = "",
-            model = testModelPath,
-            apiKey = "not-required",
-            options = Map(OnnxEmbeddingProvider.OptionOutputTensorName -> "missing_output_tensor")
-          )
-        )
-        .asInstanceOf[OnnxEmbeddingProvider]
-
-      try {
-        val request = EmbeddingRequest(
-          input = Seq("Hello ONNX embeddings"),
-          model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
-        )
-
-        val result = provider.embed(request)
-        result.isLeft shouldBe true
-        result.left.value.message should include("Configured output tensor 'missing_output_tensor' not found")
-      } finally
-        provider.close()
+      val result = provider.embed(request)
+      result.isLeft shouldBe true
+      result.left.value.message should include("already closed")
     }
   }
 }

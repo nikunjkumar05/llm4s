@@ -27,7 +27,7 @@ import org.llm4s.types.Result
  * @see [[VoyageAIEmbeddingProvider]] for VoyageAI embedding models
  * @see [[OllamaEmbeddingProvider]] for local Ollama embedding models
  */
-trait EmbeddingProvider {
+trait EmbeddingProvider extends AutoCloseable {
 
   /**
    * Generates embeddings for the given text inputs.
@@ -36,4 +36,11 @@ trait EmbeddingProvider {
    * @return Right(EmbeddingResponse) with vectors on success, Left(error) on failure
    */
   def embed(request: EmbeddingRequest): Result[EmbeddingResponse]
+
+  /**
+   * Releases provider-owned resources.
+   *
+   * Stateless HTTP providers can keep the default no-op implementation.
+   */
+  override def close(): Unit = ()
 }

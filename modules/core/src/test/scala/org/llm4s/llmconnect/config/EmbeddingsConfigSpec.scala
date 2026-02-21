@@ -94,6 +94,7 @@ class EmbeddingsConfigSpec extends AnyWordSpec with Matchers {
         "llm4s.embeddings.provider"               -> "onnx",
         "llm4s.embeddings.onnx.modelPath"         -> "models/embeddings.onnx",
         "llm4s.embeddings.onnx.inputTensorName"   -> "input_ids",
+        "llm4s.embeddings.onnx.tokenizerVocabPath" -> "models/vocab.txt",
         "llm4s.embeddings.onnx.maxSequenceLength" -> "256",
         "llm4s.embeddings.onnx.executionMode"     -> "parallel"
       )
@@ -103,6 +104,7 @@ class EmbeddingsConfigSpec extends AnyWordSpec with Matchers {
         cfg.model shouldBe "models/embeddings.onnx"
         cfg.apiKey shouldBe "not-required"
         cfg.options("inputTensorName") shouldBe "input_ids"
+        cfg.options("tokenizerVocabPath") shouldBe "models/vocab.txt"
         cfg.options("maxSequenceLength") shouldBe "256"
         cfg.options("executionMode") shouldBe "parallel"
       }

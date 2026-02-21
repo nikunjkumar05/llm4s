@@ -54,6 +54,7 @@ import scala.concurrent.{ ExecutionContext, Future }
 final class RAG private (
   val config: RAGConfig,
   private val embeddingClient: EmbeddingClient,
+  private val ownsEmbeddingClient: Boolean,
   private val embeddingModelConfig: EmbeddingModelConfig,
   private val chunker: DocumentChunker,
   private val hybridSearcher: HybridSearcher,
@@ -870,8 +871,12 @@ final class RAG private (
   /**
    * Close resources.
    */
-  override def close(): Unit =
+  override def close(): Unit = {
     hybridSearcher.close()
+    if (ownsEmbeddingClient) {
+      embeddingClient.close()
+    }
+  }
 
   // ========== Private Implementation ==========
 
@@ -1079,6 +1084,7 @@ object RAG {
       rag = new RAG(
         config = config,
         embeddingClient = embeddingClient,
+        ownsEmbeddingClient = existingClient.isEmpty,
         embeddingModelConfig = embeddingModelConfig,
         chunker = chunker,
         hybridSearcher = hybridSearcher,
