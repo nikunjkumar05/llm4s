@@ -47,7 +47,7 @@ class EmbeddingClientFactorySpec extends AnyWordSpec with Matchers {
       res.isRight shouldBe true
     }
 
-    "build client for onnx without throwing" in {
+    "return an error for onnx when model assets are invalid" in {
       val cfg = EmbeddingProviderConfig(
         baseUrl = "",
         model = "missing-model.onnx",
@@ -59,7 +59,7 @@ class EmbeddingClientFactorySpec extends AnyWordSpec with Matchers {
         )
       )
       val res = EmbeddingClient.from("onnx", cfg)
-      res.isRight shouldBe true
+      res.isLeft shouldBe true
     }
 
     "reject unknown provider" in {

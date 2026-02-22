@@ -10,6 +10,7 @@ import org.llm4s.llmconnect.provider.{
   VoyageAIEmbeddingProvider,
   OnnxEmbeddingProvider
 }
+import org.llm4s.core.safety.OptionalDependency
 import org.llm4s.model.ModelRegistry
 import org.llm4s.trace.Tracing
 import org.llm4s.types.Result
@@ -127,10 +128,8 @@ object EmbeddingClient {
   }
 
   private def createOnnxClient(cfg: EmbeddingProviderConfig): Result[EmbeddingClient] =
-    try
-      Right(new EmbeddingClient(OnnxEmbeddingProvider.fromConfig(cfg)))
-    catch {
-      case e: NoClassDefFoundError =>
+    OptionalDependency.catchLoadFailure(OnnxEmbeddingProvider.fromConfig(cfg)) match {
+      case Left(OptionalDependency.MissingClass(e)) =>
         Left(
           EmbeddingError(
             code = Some("500"),
@@ -139,7 +138,7 @@ object EmbeddingClient {
             provider = "onnx"
           )
         )
-      case e: ExceptionInInitializerError if Option(e.getCause).exists(_.isInstanceOf[NoClassDefFoundError]) =>
+      case Left(OptionalDependency.MissingClassDuringInitialization(_)) =>
         Left(
           EmbeddingError(
             code = Some("500"),
@@ -148,7 +147,7 @@ object EmbeddingClient {
             provider = "onnx"
           )
         )
-      case e: LinkageError =>
+      case Left(OptionalDependency.Linkage(e)) =>
         Left(
           EmbeddingError(
             code = Some("500"),
@@ -157,6 +156,8 @@ object EmbeddingClient {
             provider = "onnx"
           )
         )
+      case Right(providerResult) =>
+        providerResult.map(provider => new EmbeddingClient(provider))
     }
 
 }

@@ -4,6 +4,7 @@ import ai.onnxruntime.{ OnnxTensor, OnnxValue, OrtEnvironment, OrtException, Ort
 import ai.onnxruntime.OrtSession.SessionOptions.{ ExecutionMode, OptLevel }
 import org.llm4s.llmconnect.config.EmbeddingProviderConfig
 import org.llm4s.llmconnect.model.{ EmbeddingError, EmbeddingRequest, EmbeddingResponse }
+import org.llm4s.types.{ Result, TryOps }
 import org.slf4j.LoggerFactory
 
 import java.nio.LongBuffer
@@ -15,8 +16,26 @@ import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.Try
 import scala.util.Using
-import scala.util.control.NonFatal
 
+/**
+ * Runtime settings for local ONNX embedding inference.
+ *
+ * @param inputTensorName model input tensor name for token IDs
+ * @param attentionMaskTensorName optional attention mask tensor name; `None` disables mask input
+ * @param tokenTypeTensorName optional token type tensor name; `None` disables token type input
+ * @param outputTensorName optional output tensor name; defaults to the first model output
+ * @param maxSequenceLength max token length (including special tokens and padding)
+ * @param tokenizerVocabPath optional explicit path to `vocab.txt`
+ * @param tokenizerDoLowerCase whether tokenizer lowercases input text
+ * @param tokenizerUnknownToken vocabulary token used for unknown subwords
+ * @param tokenizerClsToken vocabulary token prepended at sequence start
+ * @param tokenizerSepToken vocabulary token appended at sequence end
+ * @param tokenizerPadToken vocabulary token used for padding
+ * @param intraOpNumThreads optional ONNX intra-op thread override
+ * @param interOpNumThreads optional ONNX inter-op thread override
+ * @param optimizationLevel optional ONNX graph optimization level
+ * @param executionMode optional ONNX execution mode
+ */
 final case class OnnxEmbeddingSettings(
   inputTensorName: String = OnnxEmbeddingProvider.DefaultInputTensorName,
   attentionMaskTensorName: Option[String] = Some(OnnxEmbeddingProvider.DefaultAttentionMaskTensorName),
@@ -67,14 +86,50 @@ object OnnxEmbeddingProvider {
   val OptionExecutionMode           = "executionMode"
   private val logger                = LoggerFactory.getLogger(getClass)
 
-  def fromConfig(cfg: EmbeddingProviderConfig): EmbeddingProvider = {
+  def fromConfig(cfg: EmbeddingProviderConfig): Result[EmbeddingProvider] = {
     if (readPositiveIntOption(cfg, OptionVocabSize).isDefined) {
       logger.warn(
         s"[OnnxEmbeddingProvider] '$OptionVocabSize' is ignored. Configure tokenizer assets via '$OptionTokenizerVocabPath'."
       )
     }
 
-    val settings = OnnxEmbeddingSettings(
+    val settings       = settingsFromConfig(cfg)
+    val sessionOptions = createSessionOptions(settings)
+
+    createEnvironment().left
+      .map { error =>
+        closeSessionOptionsQuietly(sessionOptions)
+        error
+      }
+      .flatMap { env =>
+        createSession(env, cfg.model, sessionOptions).left
+          .map { error =>
+            closeSessionOptionsQuietly(sessionOptions)
+            error
+          }
+          .flatMap { session =>
+            createTokenizer(cfg.model, settings).left
+              .map { error =>
+                closeSessionQuietly(session)
+                closeSessionOptionsQuietly(sessionOptions)
+                error
+              }
+              .map { tokenizer =>
+                new OnnxEmbeddingProvider(
+                  modelPath = cfg.model,
+                  settings = settings,
+                  env = env,
+                  session = session,
+                  tokenizer = tokenizer,
+                  sessionOptions = sessionOptions
+                )
+              }
+          }
+      }
+  }
+
+  private[provider] def settingsFromConfig(cfg: EmbeddingProviderConfig): OnnxEmbeddingSettings =
+    OnnxEmbeddingSettings(
       inputTensorName = readStringOption(cfg, OptionInputTensorName).getOrElse(DefaultInputTensorName),
       attentionMaskTensorName =
         readTensorNameOption(cfg, OptionAttentionMaskTensorName, Some(DefaultAttentionMaskTensorName)),
@@ -92,8 +147,6 @@ object OnnxEmbeddingProvider {
       optimizationLevel = readOptimizationLevel(cfg, OptionOptimizationLevel),
       executionMode = readExecutionMode(cfg, OptionExecutionMode)
     )
-    new OnnxEmbeddingProvider(modelPath = cfg.model, settings = settings)
-  }
 
   private def readStringOption(cfg: EmbeddingProviderConfig, key: String): Option[String] =
     cfg.options.get(key).map(_.trim).filter(_.nonEmpty)
@@ -363,7 +416,7 @@ object OnnxEmbeddingProvider {
       sepToken: String,
       padToken: String
     ): Either[String, WordPieceTokenizer] =
-      try {
+      Try {
         val path = Paths.get(vocabPath)
         if (!Files.isRegularFile(path)) {
           Left(s"Tokenizer vocabulary file not found at '$vocabPath'")
@@ -391,25 +444,148 @@ object OnnxEmbeddingProvider {
             }
           }
         }
-      } catch {
-        case NonFatal(e) =>
-          Left(
-            s"Failed to read tokenizer vocabulary at '$vocabPath': ${Option(e.getMessage).getOrElse(e.getClass.getSimpleName)}"
-          )
-      }
+      }.toResult.left.map { error =>
+        s"Failed to read tokenizer vocabulary at '$vocabPath': ${Option(error.message).getOrElse(error.getClass.getSimpleName)}"
+      }.flatten
   }
+
+  private def createEnvironment(): Either[EmbeddingError, OrtEnvironment] =
+    Try(OrtEnvironment.getEnvironment()).toResult.left.map { error =>
+      EmbeddingError(
+        code = None,
+        message = s"Failed to initialize ONNX runtime environment: ${error.message}",
+        provider = ProviderName
+      )
+    }
+
+  private def createSessionOptions(
+    runtimeSettings: OnnxEmbeddingSettings
+  ): Option[OrtSession.SessionOptions] = {
+    val hasOverrides =
+      runtimeSettings.intraOpNumThreads.isDefined ||
+        runtimeSettings.interOpNumThreads.isDefined ||
+        runtimeSettings.optimizationLevel.isDefined ||
+        runtimeSettings.executionMode.isDefined
+
+    if (!hasOverrides) {
+      None
+    } else {
+      val options = new OrtSession.SessionOptions()
+      runtimeSettings.intraOpNumThreads.foreach(options.setIntraOpNumThreads)
+      runtimeSettings.interOpNumThreads.foreach(options.setInterOpNumThreads)
+      runtimeSettings.optimizationLevel.foreach(options.setOptimizationLevel)
+      runtimeSettings.executionMode.foreach(options.setExecutionMode)
+      Some(options)
+    }
+  }
+
+  private def createSession(
+    env: OrtEnvironment,
+    path: String,
+    options: Option[OrtSession.SessionOptions]
+  ): Either[EmbeddingError, OrtSession] =
+    Try {
+      options match {
+        case Some(sessionOptions) => env.createSession(path, sessionOptions)
+        case None                 => env.createSession(path)
+      }
+    }.toResult.left.map { error =>
+      EmbeddingError(
+        code = None,
+        message = s"Failed to initialize ONNX model at '$path': ${error.message}",
+        provider = ProviderName
+      )
+    }
+
+  private def createTokenizer(
+    path: String,
+    runtimeSettings: OnnxEmbeddingSettings
+  ): Either[EmbeddingError, OnnxEmbeddingProvider.WordPieceTokenizer] =
+    resolveTokenizerVocabPath(path, runtimeSettings).left
+      .map(message => EmbeddingError(code = None, message = message, provider = ProviderName))
+      .flatMap { vocabPath =>
+        OnnxEmbeddingProvider.WordPieceTokenizer
+          .fromVocabFile(
+            vocabPath = vocabPath,
+            doLowerCase = runtimeSettings.tokenizerDoLowerCase,
+            unknownToken = runtimeSettings.tokenizerUnknownToken,
+            clsToken = runtimeSettings.tokenizerClsToken,
+            sepToken = runtimeSettings.tokenizerSepToken,
+            padToken = runtimeSettings.tokenizerPadToken
+          )
+          .left
+          .map(message => EmbeddingError(code = None, message = message, provider = ProviderName))
+      }
+
+  private def resolveTokenizerVocabPath(
+    path: String,
+    runtimeSettings: OnnxEmbeddingSettings
+  ): Either[String, String] =
+    runtimeSettings.tokenizerVocabPath match {
+      case Some(configuredPath) =>
+        val candidate = configuredPath.trim
+        if (candidate.isEmpty) {
+          Left(
+            s"Tokenizer vocabulary path is empty. Set '$OptionTokenizerVocabPath' to a valid vocab.txt path."
+          )
+        } else {
+          Try {
+            if (Files.isRegularFile(Paths.get(candidate))) {
+              Right(candidate)
+            } else {
+              Left(s"Tokenizer vocabulary file not found at '$candidate'")
+            }
+          }.toResult.left.map(_ => s"Tokenizer vocabulary file not found at '$candidate'").flatten
+        }
+
+      case None =>
+        Try {
+          val modelPath = Paths.get(path)
+          val candidates = Seq(
+            modelPath.resolveSibling("vocab.txt"),
+            modelPath.resolveSibling("tokenizer").resolve("vocab.txt")
+          )
+          candidates.find(Files.isRegularFile(_)) match {
+            case Some(found) =>
+              Right(found.toString)
+            case None =>
+              Left(
+                s"Tokenizer vocabulary not found for ONNX model '$path'. Set '$OptionTokenizerVocabPath' to the matching vocab.txt."
+              )
+          }
+        }.toResult.left
+          .map(_ =>
+            s"Tokenizer vocabulary not found for ONNX model '$path'. Set '$OptionTokenizerVocabPath' to the matching vocab.txt."
+          )
+          .flatten
+    }
+
+  private def closeSessionQuietly(session: OrtSession): Unit =
+    Try(session.close()).failed.foreach { error =>
+      logger.debug(
+        s"[OnnxEmbeddingProvider] Ignored session close error: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}"
+      )
+    }
+
+  private def closeSessionOptionsQuietly(options: Option[OrtSession.SessionOptions]): Unit =
+    options.foreach { sessionOptions =>
+      Try(sessionOptions.close()).failed.foreach { error =>
+        logger.debug(
+          s"[OnnxEmbeddingProvider] Ignored session options close error: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}"
+        )
+      }
+    }
 }
 
-final class OnnxEmbeddingProvider(
+final class OnnxEmbeddingProvider private (
   val modelPath: String,
-  val settings: OnnxEmbeddingSettings = OnnxEmbeddingSettings()
+  val settings: OnnxEmbeddingSettings,
+  private val env: OrtEnvironment,
+  private val session: OrtSession,
+  private val tokenizer: OnnxEmbeddingProvider.WordPieceTokenizer,
+  private val sessionOptions: Option[OrtSession.SessionOptions]
 ) extends EmbeddingProvider {
-  private val logger         = LoggerFactory.getLogger(getClass)
-  private val env            = OrtEnvironment.getEnvironment()
-  private val sessionOptions = createSessionOptions(settings)
-  private val sessionOrError = createSession(modelPath, sessionOptions)
-  private val tokenizerOrError =
-    createTokenizer(modelPath, settings)
+  private val logger = LoggerFactory.getLogger(getClass)
   private val closed = new AtomicBoolean(false)
 
   override def embed(request: EmbeddingRequest): Either[EmbeddingError, EmbeddingResponse] =
@@ -421,37 +597,29 @@ final class OnnxEmbeddingProvider(
           provider = OnnxEmbeddingProvider.ProviderName
         )
       )
+    } else if (request.input.isEmpty) {
+      Right(
+        EmbeddingResponse(
+          embeddings = Seq.empty,
+          metadata = Map("provider" -> OnnxEmbeddingProvider.ProviderName, "model" -> modelPath, "count" -> "0")
+        )
+      )
     } else {
-      sessionOrError.flatMap { session =>
-        tokenizerOrError.flatMap { tokenizer =>
-          if (request.input.isEmpty) {
-            Right(
-              EmbeddingResponse(
-                embeddings = Seq.empty,
-                metadata = Map("provider" -> OnnxEmbeddingProvider.ProviderName, "model" -> modelPath, "count" -> "0")
-              )
-            )
-          } else {
-            embedWithSession(session, tokenizer, request.input)
-          }
-        }
-      }
+      embedWithSession(session, tokenizer, request.input)
     }
 
   override def close(): Unit =
     if (closed.compareAndSet(false, true)) {
-      sessionOrError.foreach { session =>
-        try session.close()
-        catch {
-          case NonFatal(e) =>
-            logger.debug(s"[OnnxEmbeddingProvider] Ignored session close error: ${e.getMessage}")
-        }
+      Try(session.close()).failed.foreach { error =>
+        logger.debug(
+          s"[OnnxEmbeddingProvider] Ignored session close error: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}"
+        )
       }
       sessionOptions.foreach { options =>
-        try options.close()
-        catch {
-          case NonFatal(e) =>
-            logger.debug(s"[OnnxEmbeddingProvider] Ignored session options close error: ${e.getMessage}")
+        Try(options.close()).failed.foreach { error =>
+          logger.debug(
+            s"[OnnxEmbeddingProvider] Ignored session options close error: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}"
+          )
         }
       }
     }
@@ -589,124 +757,4 @@ final class OnnxEmbeddingProvider(
         )
     }
   }
-
-  private def createSessionOptions(
-    runtimeSettings: OnnxEmbeddingSettings
-  ): Option[OrtSession.SessionOptions] = {
-    val hasOverrides =
-      runtimeSettings.intraOpNumThreads.isDefined ||
-        runtimeSettings.interOpNumThreads.isDefined ||
-        runtimeSettings.optimizationLevel.isDefined ||
-        runtimeSettings.executionMode.isDefined
-
-    if (!hasOverrides) {
-      None
-    } else {
-      val options = new OrtSession.SessionOptions()
-      runtimeSettings.intraOpNumThreads.foreach(options.setIntraOpNumThreads)
-      runtimeSettings.interOpNumThreads.foreach(options.setInterOpNumThreads)
-      runtimeSettings.optimizationLevel.foreach(options.setOptimizationLevel)
-      runtimeSettings.executionMode.foreach(options.setExecutionMode)
-      Some(options)
-    }
-  }
-
-  private def createSession(
-    path: String,
-    options: Option[OrtSession.SessionOptions]
-  ): Either[EmbeddingError, OrtSession] =
-    try {
-      val session = options match {
-        case Some(sessionOptions) => env.createSession(path, sessionOptions)
-        case None                 => env.createSession(path)
-      }
-      Right(session)
-    } catch {
-      case e: OrtException =>
-        options.foreach(o => Try(o.close()))
-        Left(
-          EmbeddingError(
-            code = None,
-            message = s"Failed to initialize ONNX model at '$path': ${e.getMessage}",
-            provider = OnnxEmbeddingProvider.ProviderName
-          )
-        )
-      case NonFatal(e) =>
-        options.foreach(o => Try(o.close()))
-        Left(
-          EmbeddingError(
-            code = None,
-            message =
-              s"Failed to initialize ONNX model at '$path': ${Option(e.getMessage).getOrElse(e.getClass.getSimpleName)}",
-            provider = OnnxEmbeddingProvider.ProviderName
-          )
-        )
-    }
-
-  private def createTokenizer(
-    path: String,
-    runtimeSettings: OnnxEmbeddingSettings
-  ): Either[EmbeddingError, OnnxEmbeddingProvider.WordPieceTokenizer] =
-    resolveTokenizerVocabPath(path, runtimeSettings).left
-      .map(message => EmbeddingError(code = None, message = message, provider = OnnxEmbeddingProvider.ProviderName))
-      .flatMap { vocabPath =>
-        OnnxEmbeddingProvider.WordPieceTokenizer
-          .fromVocabFile(
-            vocabPath = vocabPath,
-            doLowerCase = runtimeSettings.tokenizerDoLowerCase,
-            unknownToken = runtimeSettings.tokenizerUnknownToken,
-            clsToken = runtimeSettings.tokenizerClsToken,
-            sepToken = runtimeSettings.tokenizerSepToken,
-            padToken = runtimeSettings.tokenizerPadToken
-          )
-          .left
-          .map(message => EmbeddingError(code = None, message = message, provider = OnnxEmbeddingProvider.ProviderName))
-      }
-
-  private def resolveTokenizerVocabPath(
-    path: String,
-    runtimeSettings: OnnxEmbeddingSettings
-  ): Either[String, String] =
-    runtimeSettings.tokenizerVocabPath match {
-      case Some(configuredPath) =>
-        val candidate = configuredPath.trim
-        if (candidate.isEmpty) {
-          Left(
-            s"Tokenizer vocabulary path is empty. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to a valid vocab.txt path."
-          )
-        } else {
-          try
-            if (Files.isRegularFile(Paths.get(candidate))) {
-              Right(candidate)
-            } else {
-              Left(s"Tokenizer vocabulary file not found at '$candidate'")
-            }
-          catch {
-            case NonFatal(_) =>
-              Left(s"Tokenizer vocabulary file not found at '$candidate'")
-          }
-        }
-
-      case None =>
-        try {
-          val modelPath = Paths.get(path)
-          val candidates = Seq(
-            modelPath.resolveSibling("vocab.txt"),
-            modelPath.resolveSibling("tokenizer").resolve("vocab.txt")
-          )
-          candidates.find(Files.isRegularFile(_)) match {
-            case Some(found) =>
-              Right(found.toString)
-            case None =>
-              Left(
-                s"Tokenizer vocabulary not found for ONNX model '$path'. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to the matching vocab.txt."
-              )
-          }
-        } catch {
-          case NonFatal(_) =>
-            Left(
-              s"Tokenizer vocabulary not found for ONNX model '$path'. Set '${OnnxEmbeddingProvider.OptionTokenizerVocabPath}' to the matching vocab.txt."
-            )
-        }
-    }
 }

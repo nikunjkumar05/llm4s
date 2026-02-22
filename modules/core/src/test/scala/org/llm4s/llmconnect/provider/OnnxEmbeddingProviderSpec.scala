@@ -1,7 +1,6 @@
 package org.llm4s.llmconnect.provider
 
-import org.llm4s.llmconnect.config.{ EmbeddingModelConfig, EmbeddingProviderConfig }
-import org.llm4s.llmconnect.model.EmbeddingRequest
+import org.llm4s.llmconnect.config.EmbeddingProviderConfig
 import org.scalatest.EitherValues
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -131,7 +130,7 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
     }
   }
 
-  "OnnxEmbeddingProvider.fromConfig" should {
+  "OnnxEmbeddingProvider.settingsFromConfig" should {
     "apply ONNX-specific options from EmbeddingProviderConfig" in {
       val cfg = EmbeddingProviderConfig(
         baseUrl = "",
@@ -153,19 +152,19 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         )
       )
 
-      val provider = OnnxEmbeddingProvider.fromConfig(cfg).asInstanceOf[OnnxEmbeddingProvider]
-      provider.settings.inputTensorName shouldBe "ids"
-      provider.settings.attentionMaskTensorName shouldBe None
-      provider.settings.tokenTypeTensorName shouldBe None
-      provider.settings.maxSequenceLength shouldBe 128
-      provider.settings.tokenizerVocabPath shouldBe Some("path/to/vocab.txt")
-      provider.settings.tokenizerDoLowerCase shouldBe false
-      provider.settings.tokenizerUnknownToken shouldBe "<unk>"
-      provider.settings.tokenizerClsToken shouldBe "<s>"
-      provider.settings.tokenizerSepToken shouldBe "</s>"
-      provider.settings.tokenizerPadToken shouldBe "<pad>"
-      provider.settings.optimizationLevel.map(_.name()) shouldBe Some("BASIC_OPT")
-      provider.settings.executionMode.map(_.name()) shouldBe Some("PARALLEL")
+      val settings = OnnxEmbeddingProvider.settingsFromConfig(cfg)
+      settings.inputTensorName shouldBe "ids"
+      settings.attentionMaskTensorName shouldBe None
+      settings.tokenTypeTensorName shouldBe None
+      settings.maxSequenceLength shouldBe 128
+      settings.tokenizerVocabPath shouldBe Some("path/to/vocab.txt")
+      settings.tokenizerDoLowerCase shouldBe false
+      settings.tokenizerUnknownToken shouldBe "<unk>"
+      settings.tokenizerClsToken shouldBe "<s>"
+      settings.tokenizerSepToken shouldBe "</s>"
+      settings.tokenizerPadToken shouldBe "<pad>"
+      settings.optimizationLevel.map(_.name()) shouldBe Some("BASIC_OPT")
+      settings.executionMode.map(_.name()) shouldBe Some("PARALLEL")
     }
 
     "fallback to defaults when ONNX options are omitted" in {
@@ -176,20 +175,20 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         options = Map.empty
       )
 
-      val provider = OnnxEmbeddingProvider.fromConfig(cfg).asInstanceOf[OnnxEmbeddingProvider]
-      provider.settings.inputTensorName shouldBe OnnxEmbeddingProvider.DefaultInputTensorName
-      provider.settings.attentionMaskTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultAttentionMaskTensorName)
-      provider.settings.tokenTypeTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultTokenTypeTensorName)
-      provider.settings.outputTensorName shouldBe None
-      provider.settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
-      provider.settings.tokenizerVocabPath shouldBe None
-      provider.settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
-      provider.settings.tokenizerUnknownToken shouldBe OnnxEmbeddingProvider.DefaultUnknownToken
-      provider.settings.tokenizerClsToken shouldBe OnnxEmbeddingProvider.DefaultClsToken
-      provider.settings.tokenizerSepToken shouldBe OnnxEmbeddingProvider.DefaultSepToken
-      provider.settings.tokenizerPadToken shouldBe OnnxEmbeddingProvider.DefaultPadToken
-      provider.settings.optimizationLevel shouldBe None
-      provider.settings.executionMode shouldBe None
+      val settings = OnnxEmbeddingProvider.settingsFromConfig(cfg)
+      settings.inputTensorName shouldBe OnnxEmbeddingProvider.DefaultInputTensorName
+      settings.attentionMaskTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultAttentionMaskTensorName)
+      settings.tokenTypeTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultTokenTypeTensorName)
+      settings.outputTensorName shouldBe None
+      settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
+      settings.tokenizerVocabPath shouldBe None
+      settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
+      settings.tokenizerUnknownToken shouldBe OnnxEmbeddingProvider.DefaultUnknownToken
+      settings.tokenizerClsToken shouldBe OnnxEmbeddingProvider.DefaultClsToken
+      settings.tokenizerSepToken shouldBe OnnxEmbeddingProvider.DefaultSepToken
+      settings.tokenizerPadToken shouldBe OnnxEmbeddingProvider.DefaultPadToken
+      settings.optimizationLevel shouldBe None
+      settings.executionMode shouldBe None
     }
 
     "ignore invalid numeric and enum options and use safe defaults" in {
@@ -205,11 +204,11 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
         )
       )
 
-      val provider = OnnxEmbeddingProvider.fromConfig(cfg).asInstanceOf[OnnxEmbeddingProvider]
-      provider.settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
-      provider.settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
-      provider.settings.optimizationLevel shouldBe None
-      provider.settings.executionMode shouldBe None
+      val settings = OnnxEmbeddingProvider.settingsFromConfig(cfg)
+      settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
+      settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
+      settings.optimizationLevel shouldBe None
+      settings.executionMode shouldBe None
     }
   }
 
@@ -264,53 +263,21 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
   }
 
   "OnnxEmbeddingProvider" should {
-    "return an embedding error for invalid model path without throwing at construction time" in withTempVocab(
+    "return an initialization error for an invalid model path" in withTempVocab(
       minimalVocab
     ) { vocabPath =>
-      val provider = OnnxEmbeddingProvider
-        .fromConfig(
-          EmbeddingProviderConfig(
-            baseUrl = "",
-            model = "invalid/path/to/model.onnx",
-            apiKey = "not-required",
-            options = Map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> vocabPath)
-          )
+      val result = OnnxEmbeddingProvider.fromConfig(
+        EmbeddingProviderConfig(
+          baseUrl = "",
+          model = "invalid/path/to/model.onnx",
+          apiKey = "not-required",
+          options = Map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> vocabPath)
         )
-        .asInstanceOf[OnnxEmbeddingProvider]
-
-      val request = EmbeddingRequest(
-        input = Seq("Sample text"),
-        model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
       )
 
-      val result = provider.embed(request)
       result.isLeft shouldBe true
-      result.left.value.provider shouldBe "onnx"
+      result.left.value.context.get("provider") shouldBe Some("onnx")
       result.left.value.message should include("Failed to initialize ONNX model")
-    }
-
-    "return a closed-state error after close is called" in withTempVocab(minimalVocab) { vocabPath =>
-      val provider = OnnxEmbeddingProvider
-        .fromConfig(
-          EmbeddingProviderConfig(
-            baseUrl = "",
-            model = "invalid/path/to/model.onnx",
-            apiKey = "not-required",
-            options = Map(OnnxEmbeddingProvider.OptionTokenizerVocabPath -> vocabPath)
-          )
-        )
-        .asInstanceOf[OnnxEmbeddingProvider]
-
-      provider.close()
-
-      val request = EmbeddingRequest(
-        input = Seq("Sample text"),
-        model = EmbeddingModelConfig(name = "all-MiniLM-L6-v2", dimensions = 384)
-      )
-
-      val result = provider.embed(request)
-      result.isLeft shouldBe true
-      result.left.value.message should include("already closed")
     }
   }
 }
