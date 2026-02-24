@@ -326,7 +326,7 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
     }
 
     "handle exceeding maxSequenceLength" in {
-      val settings = OnnxEmbeddingSettings(maxSequenceLength = 5)
+      val settings  = OnnxEmbeddingSettings(maxSequenceLength = 5)
       val inputText = "This is a test input that exceeds the max sequence length."
 
       val result = OnnxEmbeddingProvider.tokenize(inputText, settings)
