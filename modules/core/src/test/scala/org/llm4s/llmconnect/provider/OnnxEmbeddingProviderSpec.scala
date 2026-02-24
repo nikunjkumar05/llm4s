@@ -279,5 +279,70 @@ class OnnxEmbeddingProviderSpec extends AnyWordSpec with Matchers with EitherVal
       result.left.value.context.get("provider") shouldBe Some("onnx")
       result.left.value.message should include("Failed to initialize ONNX model")
     }
+
+    "use default settings when no custom values are provided" in {
+      val settings = OnnxEmbeddingSettings()
+
+      settings.inputTensorName shouldBe OnnxEmbeddingProvider.DefaultInputTensorName
+      settings.attentionMaskTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultAttentionMaskTensorName)
+      settings.tokenTypeTensorName shouldBe Some(OnnxEmbeddingProvider.DefaultTokenTypeTensorName)
+      settings.maxSequenceLength shouldBe OnnxEmbeddingProvider.DefaultMaxSequenceLength
+      settings.tokenizerDoLowerCase shouldBe OnnxEmbeddingProvider.DefaultTokenizerDoLowerCase
+      settings.tokenizerUnknownToken shouldBe OnnxEmbeddingProvider.DefaultUnknownToken
+      settings.tokenizerClsToken shouldBe OnnxEmbeddingProvider.DefaultClsToken
+      settings.tokenizerSepToken shouldBe OnnxEmbeddingProvider.DefaultSepToken
+      settings.tokenizerPadToken shouldBe OnnxEmbeddingProvider.DefaultPadToken
+    }
+
+    "throw an error for invalid optimizationLevel" in {
+      val invalidSettings = OnnxEmbeddingSettings(
+        optimizationLevel = Some("invalid_level")
+      )
+
+      val result = OnnxEmbeddingProvider.validateSettings(invalidSettings)
+
+      result.isLeft shouldBe true
+      result.left.value should include("Invalid optimizationLevel")
+    }
+
+    "throw an error for invalid executionMode" in {
+      val invalidSettings = OnnxEmbeddingSettings(
+        executionMode = Some("invalid_mode")
+      )
+
+      val result = OnnxEmbeddingProvider.validateSettings(invalidSettings)
+
+      result.isLeft shouldBe true
+      result.left.value should include("Invalid executionMode")
+    }
+
+    "handle empty vocab.txt path gracefully" in {
+      val invalidSettings = OnnxEmbeddingSettings(tokenizerVocabPath = Some(""))
+
+      val result = OnnxEmbeddingProvider.loadTokenizer(invalidSettings)
+
+      result.isLeft shouldBe true
+      result.left.value should include("Invalid vocab.txt path")
+    }
+
+    "handle exceeding maxSequenceLength" in {
+      val settings = OnnxEmbeddingSettings(maxSequenceLength = 5)
+      val inputText = "This is a test input that exceeds the max sequence length."
+
+      val result = OnnxEmbeddingProvider.tokenize(inputText, settings)
+
+      result.isLeft shouldBe true
+      result.left.value should include("Input exceeds max sequence length")
+    }
+
+    "handle session close errors gracefully" in {
+      val mockSession = mock[OrtSession]
+      when(mockSession.close()).thenThrow(new OrtException("Session close error"))
+
+      val result = OnnxEmbeddingProvider.closeSession(mockSession)
+
+      result.isLeft shouldBe true
+      result.left.value should include("Ignored session close error")
+    }
   }
 }
