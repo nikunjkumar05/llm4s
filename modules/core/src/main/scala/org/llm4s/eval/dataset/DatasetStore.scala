@@ -31,9 +31,9 @@ trait DatasetStore[F[_]] {
   def create(
     name: String,
     description: String,
-    inputSchema: Option[ujson.Value] = None,
-    outputSchema: Option[ujson.Value] = None,
-    tags: Set[String] = Set.empty
+    inputSchema: Option[ujson.Value],
+    outputSchema: Option[ujson.Value],
+    tags: Set[String]
   ): F[DatasetId]
 
   /**
@@ -48,9 +48,9 @@ trait DatasetStore[F[_]] {
   def addExample(
     datasetId: DatasetId,
     input: ujson.Value,
-    referenceOutput: Option[ujson.Value] = None,
-    tags: Set[String] = Set.empty,
-    metadata: Map[String, String] = Map.empty
+    referenceOutput: Option[ujson.Value],
+    tags: Set[String],
+    metadata: Map[String, String]
   ): F[ExampleId]
 
   /**
@@ -135,9 +135,9 @@ class InMemoryDatasetStore extends DatasetStore[Id] {
   override def create(
     name: String,
     description: String,
-    inputSchema: Option[ujson.Value],
-    outputSchema: Option[ujson.Value],
-    tags: Set[String]
+    inputSchema: Option[ujson.Value] = None,
+    outputSchema: Option[ujson.Value] = None,
+    tags: Set[String] = Set.empty
   ): DatasetId = synchronized {
     val id = DatasetId.generate()
     val dataset = Dataset[ujson.Value, ujson.Value](
@@ -158,10 +158,11 @@ class InMemoryDatasetStore extends DatasetStore[Id] {
   override def addExample(
     datasetId: DatasetId,
     input: ujson.Value,
-    referenceOutput: Option[ujson.Value],
-    tags: Set[String],
-    metadata: Map[String, String]
+    referenceOutput: Option[ujson.Value] = None,
+    tags: Set[String] = Set.empty,
+    metadata: Map[String, String] = Map.empty
   ): ExampleId = synchronized {
+    require(datasets.contains(datasetId), s"Dataset ${datasetId.value} does not exist")
     val id = ExampleId.generate()
     val example = Example[ujson.Value, ujson.Value](
       id = id,
@@ -195,6 +196,7 @@ class InMemoryDatasetStore extends DatasetStore[Id] {
   }
 
   override def createSnapshot(datasetId: DatasetId): SnapshotId = synchronized {
+    require(datasets.contains(datasetId), s"Dataset ${datasetId.value} does not exist")
     val snapshotId      = SnapshotId.generate()
     val currentExamples = examples.getOrElse(datasetId, List.empty)
     val snapshot = DatasetSnapshot[ujson.Value, ujson.Value](
@@ -212,18 +214,15 @@ class InMemoryDatasetStore extends DatasetStore[Id] {
   }
 
   override def importJsonl(datasetId: DatasetId, lines: Iterator[String]): (Int, Int) = synchronized {
-    var imported = 0
-    var skipped  = 0
-    lines.foreach { line =>
+    lines.foldLeft((0, 0)) { case ((imported, skipped), line) =>
       JsonlCodec.decode(line) match {
         case Some(example) =>
           addExample(datasetId, example.input, example.referenceOutput, example.tags, example.metadata)
-          imported += 1
+          (imported + 1, skipped)
         case None =>
-          skipped += 1
+          (imported, skipped + 1)
       }
     }
-    (imported, skipped)
   }
 
   override def exportJsonl(datasetId: DatasetId): Iterator[String] = synchronized {

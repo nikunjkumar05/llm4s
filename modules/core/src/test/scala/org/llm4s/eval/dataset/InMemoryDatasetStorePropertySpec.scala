@@ -199,25 +199,19 @@ class InMemoryDatasetStorePropertySpec extends AnyFlatSpec with Matchers with Sc
     }
   }
 
-  "InMemoryDatasetStore.addExample" should "use List.empty as the base when the dataset ID is not registered" in {
+  "InMemoryDatasetStore.addExample" should "reject unknown dataset IDs" in {
     forAll(genNonEmptyString) { id =>
       val store     = freshStore()
       val datasetId = DatasetId(id)
-      store.addExample(datasetId, ujson.Str("v"))
-      // The List.empty fallback was used; the example is now in the examples map
-      store.getExamples(datasetId, ExampleSelector.All) should have size 1
+      an[IllegalArgumentException] should be thrownBy store.addExample(datasetId, ujson.Str("v"))
     }
   }
 
-  "InMemoryDatasetStore.createSnapshot" should "create an empty snapshot for an unknown dataset ID" in {
+  "InMemoryDatasetStore.createSnapshot" should "reject unknown dataset IDs" in {
     forAll(genNonEmptyString) { id =>
       val store     = freshStore()
       val datasetId = DatasetId(id)
-      val snapId    = store.createSnapshot(datasetId)
-      val snap      = store.getSnapshot(snapId)
-      snap shouldBe defined
-      snap.get.examples shouldBe empty
-      snap.get.datasetId shouldBe datasetId
+      an[IllegalArgumentException] should be thrownBy store.createSnapshot(datasetId)
     }
   }
 

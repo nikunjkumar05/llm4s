@@ -54,8 +54,9 @@ object JsonlCodec {
    * Never throws; all parse errors are caught and collapsed to `None`.
    */
   def decode(line: String): Option[Example[ujson.Value, ujson.Value]] =
-    Try {
-      val json = ujson.read(line)
+    // Try is scoped to ujson.read only (which throws on malformed JSON);
+    // structural extraction below uses Option combinators and never throws.
+    Try(ujson.read(line)).toOption.flatMap { json =>
       for {
         obj   <- json.objOpt
         idStr <- obj.value.get("id").flatMap(_.strOpt)
@@ -77,5 +78,5 @@ object JsonlCodec {
           metadata = metadata
         )
       }
-    }.toOption.flatten
+    }
 }

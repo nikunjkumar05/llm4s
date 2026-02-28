@@ -91,13 +91,14 @@ class DatasetModelPropertySpec extends AnyFlatSpec with Matchers with ScalaCheck
 
   // ---- Example: all fields are preserved ----
 
-  "Example" should "preserve id, input, referenceOutput, tags and metadata fields" in {
+  "Example" should "preserve all fields through copy()" in {
     forAll(genExample) { ex =>
-      ex.id shouldBe ex.id
-      ex.input shouldBe ex.input
-      ex.referenceOutput shouldBe ex.referenceOutput
-      ex.tags shouldBe ex.tags
-      ex.metadata shouldBe ex.metadata
+      val copied = ex.copy()
+      copied.id shouldBe ex.id
+      copied.input shouldBe ex.input
+      copied.referenceOutput shouldBe ex.referenceOutput
+      copied.tags shouldBe ex.tags
+      copied.metadata shouldBe ex.metadata
     }
   }
 
