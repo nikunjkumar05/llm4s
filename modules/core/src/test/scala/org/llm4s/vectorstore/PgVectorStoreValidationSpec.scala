@@ -17,31 +17,31 @@ class PgVectorStoreValidationSpec extends AnyFlatSpec with Matchers {
 
   it should "reject table names with special characters" in {
     PgVectorStore.validateTableName("vectors-1") should matchPattern {
-      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+      case Left(ProcessingError(msg, op, _)) if msg.contains("Invalid table name") && op == "pgvector-store" =>
     }
   }
 
   it should "reject table names with spaces" in {
     PgVectorStore.validateTableName("vectors table") should matchPattern {
-      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+      case Left(ProcessingError(msg, op, _)) if msg.contains("Invalid table name") && op == "pgvector-store" =>
     }
   }
 
   it should "reject SQL injection attempts" in {
     PgVectorStore.validateTableName("; DROP TABLE users; --") should matchPattern {
-      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+      case Left(ProcessingError(msg, op, _)) if msg.contains("Invalid table name") && op == "pgvector-store" =>
     }
   }
 
   it should "reject empty table names" in {
     PgVectorStore.validateTableName("") should matchPattern {
-      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+      case Left(ProcessingError(msg, op, _)) if msg.contains("Invalid table name") && op == "pgvector-store" =>
     }
   }
 
   it should "reject null table names" in {
     PgVectorStore.validateTableName(null) should matchPattern {
-      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+      case Left(ProcessingError(msg, op, _)) if msg.contains("Invalid table name") && op == "pgvector-store" =>
     }
   }
 }
