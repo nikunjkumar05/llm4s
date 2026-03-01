@@ -1,6 +1,7 @@
 package org.llm4s.runner
 
 import org.llm4s.shared._
+
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -112,6 +113,32 @@ class WorkspaceAgentInterfaceImplTest extends AnyFlatSpec with Matchers with org
     response.matches should not be empty
     response.matches.exists(_.path == "test1.txt") shouldBe true
     response.matches.exists(_.path == "test2.txt") shouldBe true
+    // truncated should be false when number of hits is small
+    response.isTruncated shouldBe false
+  }
+
+  it should "set isTruncated when result cap is reached" in {
+    // prepare a file with multiple matches
+    val bigFile = tempDir.resolve("big.txt")
+    val content = List.fill(5)("needle").mkString("\n")
+    Files.write(bigFile, content.getBytes(StandardCharsets.UTF_8))
+
+    // create an interface with a very small search limit so we hit truncation
+    val tinyLimits = WorkspaceSandboxConfig.DefaultLimits.copy(maxSearchResults = 2)
+    val smallInterface = new WorkspaceAgentInterfaceImpl(workspacePath, isWindowsHost, Some(WorkspaceSandboxConfig(limits = tinyLimits)))
+
+    val resp = smallInterface.searchFiles(
+      paths = List("."),
+      query = "needle",
+      searchType = "literal",
+      recursive = Some(true)
+    )
+
+    resp.matches.size shouldBe 2
+    resp.isTruncated shouldBe true
+    // totalMatches is only guaranteed to go one past the cap; we don't scan the
+    // whole workspace for performance reasons.
+    resp.totalMatches shouldBe 3
   }
 
   it should "exclude default patterns consistently with Windows path separators" in {
