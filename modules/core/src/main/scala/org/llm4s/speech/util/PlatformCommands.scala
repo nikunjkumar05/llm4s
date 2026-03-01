@@ -66,7 +66,8 @@ object PlatformCommands {
         |                struct.pack('<IHHIIHH', 16, 1, 1, 22050, 44100, 2, 16) +
         |                b'data' + struct.pack('<I', 0))
         """.stripMargin.trim
-    Seq("python3", "-c", script)
+    val pythonCmd = if (isWindows) "python" else "python3"
+    Seq(pythonCmd, "-c", script)
   }
 
   /**
