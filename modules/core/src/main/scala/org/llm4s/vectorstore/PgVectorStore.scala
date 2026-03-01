@@ -546,8 +546,13 @@ object PgVectorStore {
   /**
    * Create a PgVectorStore from an existing HikariDataSource after validating the table name.
    * Validation is performed before any side-effects (like opening connections) occur.
+   *
+   * By default, the dataSource is NOT owned (ownsDataSource = false), meaning the caller remains
+   * responsible for managing the dataSource lifecycle. Pass ownsDataSource = true if you want
+   * the PgVectorStore to close the dataSource on close(). This is safe for exclusive-use pools
+   * but dangerous for shared pools across multiple stores.
    */
-  def create(dataSource: HikariDataSource, tableName: String, ownsDataSource: Boolean = true): Result[PgVectorStore] =
+  def create(dataSource: HikariDataSource, tableName: String, ownsDataSource: Boolean = false): Result[PgVectorStore] =
     validateTableName(tableName).flatMap { _ =>
       Try {
         new PgVectorStore(dataSource, tableName, ownsDataSource)

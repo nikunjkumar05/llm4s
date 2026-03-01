@@ -6,20 +6,42 @@ import org.llm4s.error.ProcessingError
 
 class PgVectorStoreValidationSpec extends AnyFlatSpec with Matchers {
 
-  "validateTableName" should "accept valid table names" in {
-    val valid = "vectors_1"
-    val res   = PgVectorStore.validateTableName(valid)
-    res shouldBe Right(valid)
+  "validateTableName" should "accept valid table names with letters, digits, and underscores" in {
+    // Test multiple valid patterns
+    PgVectorStore.validateTableName("vectors") shouldBe Right("vectors")
+    PgVectorStore.validateTableName("vectors_1") shouldBe Right("vectors_1")
+    PgVectorStore.validateTableName("_vectors") shouldBe Right("_vectors")
+    PgVectorStore.validateTableName("VECTORS123") shouldBe Right("VECTORS123")
+    PgVectorStore.validateTableName("v") shouldBe Right("v")
   }
 
-  it should "reject invalid table names" in {
-    val invalids = Seq("vectors-1", "; DROP TABLE users; --", "spaces not allowed", "", null)
-    invalids.foreach { n =>
-      val res = PgVectorStore.validateTableName(n)
-      res match {
-        case Left(err: ProcessingError) => err.message should include("Invalid table name")
-        case other                      => fail(s"Expected ProcessingError for '$n', got $other")
-      }
+  it should "reject table names with special characters" in {
+    PgVectorStore.validateTableName("vectors-1") should matchPattern {
+      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+    }
+  }
+
+  it should "reject table names with spaces" in {
+    PgVectorStore.validateTableName("vectors table") should matchPattern {
+      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+    }
+  }
+
+  it should "reject SQL injection attempts" in {
+    PgVectorStore.validateTableName("; DROP TABLE users; --") should matchPattern {
+      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+    }
+  }
+
+  it should "reject empty table names" in {
+    PgVectorStore.validateTableName("") should matchPattern {
+      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
+    }
+  }
+
+  it should "reject null table names" in {
+    PgVectorStore.validateTableName(null) should matchPattern {
+      case Left(ProcessingError("pgvector-store", msg, _)) if msg.contains("Invalid table name") =>
     }
   }
 }
